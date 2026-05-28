@@ -1,0 +1,1444 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>今天吃啥 · 干饭抽签器</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        warm: {
+          50:'#fff5f0', 100:'#ffe8db', 200:'#ffd1b8', 300:'#ffb38a',
+          400:'#ff9557', 500:'#ff7b2c', 600:'#e6651a', 700:'#bf4f0f',
+          800:'#993d08', 900:'#732d04'
+        },
+        cream: '#FFF8F0',
+        gold: { light:'#FFF3D6', DEFAULT:'#FFC940', deep:'#E6A800' }
+      }
+    }
+  }
+}
+</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700;900&display=swap');
+
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: linear-gradient(170deg, #FFF8F0 0%, #FFF0E0 30%, #FFFAF0 60%, #FFF5EC 100%);
+  min-height: 100vh;
+  color: #3D2C1E;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 背景装饰 */
+body::before {
+  content: '';
+  position: fixed;
+  top: -180px; right: -120px;
+  width: 400px; height: 400px;
+  background: radial-gradient(circle, rgba(255,155,80,0.12) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none; z-index: 0;
+}
+body::after {
+  content: '';
+  position: fixed;
+  bottom: -100px; left: -80px;
+  width: 300px; height: 300px;
+  background: radial-gradient(circle, rgba(255,200,60,0.10) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none; z-index: 0;
+}
+
+/* 结果卡片动画 */
+@keyframes resultPopIn {
+  0%   { transform: translateY(30px) scale(0.92); opacity: 0; }
+  60%  { transform: translateY(-4px) scale(1.02); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+.result-enter { animation: resultPopIn 0.5s cubic-bezier(0.22, 0.98, 0.36, 1.1) forwards; }
+
+/* 文字闪烁抽签 */
+@keyframes textShuffle {
+  0%,100% { opacity:1; }
+  50%     { opacity:0.3; transform:translateY(-2px); }
+}
+.shuffling .shuffle-text { animation: textShuffle 0.1s ease-in-out infinite; }
+
+/* 按钮悬浮 */
+.btn-primary {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 14px 0 rgba(255,123,44,0.3);
+}
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px 0 rgba(255,123,44,0.4);
+}
+.btn-primary:active { transform: translateY(0) scale(0.97); }
+
+/* 分类胶囊 */
+.cat-chip {
+  transition: all 0.2s ease;
+  cursor: pointer;
+  user-select: none;
+}
+.cat-chip:hover { transform: translateY(-1px); }
+.cat-chip.active {
+  background: linear-gradient(135deg, #ff7b2c, #ff9557);
+  color: #fff;
+  box-shadow: 0 3px 12px rgba(255,123,44,0.35);
+  font-weight: 600;
+}
+
+/* 底栏 */
+.bottom-nav {
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  background: rgba(255,255,255,0.85);
+  border-top: 1px solid rgba(0,0,0,0.05);
+}
+
+/* 标签 */
+.badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 3px 10px; border-radius: 20px;
+  font-size: 0.7rem; font-weight: 600; letter-spacing: 0.02em;
+}
+.badge-hot     { background: #FFF0F0; color: #E53E3E; }
+.badge-takeout { background: #ECFDF5; color: #059669; }
+.badge-trend   { background: #FFF7ED; color: #EA580C; }
+
+/* Toast */
+.toast {
+  position: fixed; top: 24px; left: 50%; transform: translateX(-50%);
+  background: #2D2420; color: #fff;
+  padding: 10px 22px; border-radius: 30px; font-size: 0.85rem;
+  z-index: 9999; opacity: 0; transition: opacity 0.3s, transform 0.3s;
+  pointer-events: none; box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* 不喜欢滑出 */
+@keyframes dislikeOut {
+  0%   { transform: translateX(0); opacity:1; }
+  100% { transform: translateX(120%); opacity:0; }
+}
+.dislike-remove { animation: dislikeOut 0.35s ease-in forwards; }
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-thumb { background: #FFB38A; border-radius: 4px; }
+
+/* 空状态插图 */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 60px 20px; color: #C9B8A8;
+}
+.empty-state .icon { font-size: 3.5rem; margin-bottom: 12px; opacity: 0.6; }
+</style>
+</head>
+<body class="relative z-10">
+
+<!-- Toast -->
+<div id="toast" class="toast" style="transform:translateX(-50%) translateY(-12px)"></div>
+
+<!-- 主容器 -->
+<div class="max-w-lg mx-auto px-4 py-5 pb-28">
+
+  <!-- ====== HEADER ====== -->
+  <header class="text-center mb-5 pt-2">
+    <div class="inline-flex items-center gap-2 bg-white/60 backdrop-blur rounded-full px-4 py-1.5 mb-3 border border-orange-100 shadow-sm"
+         id="locationBar" onclick="refreshLocation()">
+      <span class="text-sm">📍</span>
+      <span id="locationText" class="text-xs text-gray-500">正在定位…</span>
+    </div>
+    <h1 class="text-4xl font-black tracking-tight" style="background:linear-gradient(135deg,#FF7B2C,#FFB84D);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">
+      今天吃啥
+    </h1>
+    <p class="text-sm text-gray-400 mt-1 font-medium">干饭抽签器 · 专治选择困难</p>
+  </header>
+
+  <!-- ====== 分类筛选 ====== -->
+  <div class="flex flex-wrap gap-2 justify-center mb-4" id="categoryFilters">
+  </div>
+
+  <!-- ====== 抽签结果区（核心） ====== -->
+  <div id="drawArea" class="mb-4">
+    <!-- 初始状态：大按钮居中 -->
+    <div id="initialState" class="text-center py-10">
+      <div class="text-7xl mb-5 opacity-80">🍚</div>
+      <button id="mainDrawBtn" onclick="drawFood()"
+        class="btn-primary px-12 py-4 text-white text-xl font-black rounded-2xl"
+        style="background:linear-gradient(135deg,#FF7B2C,#FF9A4D);">
+        🎲 来一签！
+      </button>
+      <p class="text-xs text-gray-400 mt-4">点击上方按钮，随机抽取今日美食</p>
+    </div>
+
+    <!-- 结果状态：大卡片 -->
+    <div id="resultState" class="hidden">
+      <div id="resultCard" class="bg-white rounded-3xl shadow-xl shadow-orange-100/50 border border-orange-50 overflow-hidden">
+        <!-- 顶部装饰条 -->
+        <div class="h-1.5" style="background:linear-gradient(90deg,#FF7B2C,#FFB84D,#FF7B2C);"></div>
+        <div class="p-6">
+          <!-- emoji + 名称 -->
+          <div class="flex items-start gap-4 mb-4">
+            <div class="text-5xl flex-shrink-0" id="resultEmoji">🎯</div>
+            <div class="flex-1 min-w-0">
+              <h2 class="text-2xl font-black text-gray-800 leading-tight" id="resultName">--</h2>
+              <div class="flex items-center gap-2 mt-1 flex-wrap">
+                <span class="text-xs text-gray-400" id="resultMeta">--</span>
+                <span id="resultTags"></span>
+              </div>
+            </div>
+          </div>
+          <!-- 详情 -->
+          <div class="rounded-2xl p-4 mb-4 text-sm text-gray-600 leading-relaxed" id="resultDetail"
+               style="background:linear-gradient(135deg,#FFF8F0,#FFF3E6);">--</div>
+          <!-- 操作栏 -->
+          <div class="flex gap-2">
+            <button id="dislikeBtn" onclick="dislikeCurrent()"
+              class="flex-1 py-3 rounded-xl font-medium text-sm transition-all
+                     bg-gray-50 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+              👎 不喜欢
+            </button>
+            <button id="favBtn" onclick="favCurrent()"
+              class="flex-1 py-3 rounded-xl font-medium text-sm transition-all
+                     bg-orange-50 text-orange-500 hover:bg-orange-100">
+              🤍 收藏
+            </button>
+            <button id="redrawBtn" onclick="drawFood()"
+              class="flex-1 py-3 rounded-xl font-medium text-sm transition-all
+                     bg-warm-500 text-white hover:shadow-lg"
+              style="background:linear-gradient(135deg,#FF7B2C,#FF9557);">
+              🔄 再来一签
+            </button>
+            <button id="shareBtn" onclick="shareCurrent()"
+              class="py-3 px-4 rounded-xl font-medium text-sm transition-all
+                     bg-gray-50 text-gray-500 hover:bg-gray-100">
+              📤
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== 附近商家 ====== -->
+  <div id="nearbySection" class="hidden bg-white rounded-2xl shadow-sm border border-orange-50 p-4 mb-4">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-bold text-gray-700 text-sm flex items-center gap-1.5">
+        <span>📍</span> 附近美食
+      </h3>
+      <span class="text-xs text-gray-400" id="nearbyCity"></span>
+    </div>
+    <div id="nearbyList" class="space-y-0.5"></div>
+    <p class="text-[10px] text-gray-300 mt-2 text-right">Powered by 高德地图</p>
+  </div>
+
+  <!-- ====== 热门推荐 ====== -->
+  <div class="bg-white rounded-2xl shadow-sm border border-orange-50 p-4 mb-4">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-bold text-gray-700 text-sm">🔥 社媒热门</h3>
+      <span class="text-xs text-gray-400">抖音 / 小红书</span>
+    </div>
+    <div class="grid grid-cols-2 gap-2" id="trendingList"></div>
+  </div>
+
+  <!-- ====== 外卖检索 ====== -->
+  <div class="bg-white rounded-2xl shadow-sm border border-orange-50 p-4 mb-4">
+    <h3 class="font-bold text-gray-700 text-sm mb-3">🛵 外卖模拟检索</h3>
+    <div class="flex gap-2">
+      <input id="deliveryInput" type="text" placeholder="奶茶 / 烤肉 / 麻辣烫…"
+        class="flex-1 px-4 py-3 rounded-xl border border-gray-200 text-sm
+               focus:outline-none focus:border-warm-400 focus:ring-4 focus:ring-warm-100 transition">
+      <button onclick="searchDelivery()"
+        class="px-5 py-3 text-white rounded-xl font-medium text-sm transition-all"
+        style="background:linear-gradient(135deg,#FF7B2C,#FF9557);">搜索</button>
+    </div>
+    <div id="deliveryResult" class="mt-3 space-y-2"></div>
+  </div>
+
+</div>
+
+<!-- ====== 底部导航 ====== -->
+<nav class="bottom-nav fixed bottom-0 left-0 right-0 px-4 py-2 z-50">
+  <div class="max-w-lg mx-auto flex justify-around items-center">
+    <button class="nav-btn flex flex-col items-center gap-1 text-warm-500" data-tab="home">
+      <span class="text-xl">🏠</span><span class="text-[11px] font-semibold">抽签</span>
+    </button>
+    <button class="nav-btn flex flex-col items-center gap-1 text-gray-400 relative" data-tab="favorites">
+      <span class="text-xl">❤️</span><span class="text-[11px] font-medium">收藏</span>
+      <span id="favBadge" class="hidden absolute -top-0.5 right-2 bg-red-500 text-white text-[10px] min-w-[16px] h-4 rounded-full flex items-center justify-center px-1 font-bold">0</span>
+    </button>
+    <button class="nav-btn flex flex-col items-center gap-1 text-gray-400" data-tab="history">
+      <span class="text-xl">📋</span><span class="text-[11px] font-medium">历史</span>
+    </button>
+  </div>
+</nav>
+
+<!-- ====== 收藏面板 ====== -->
+<div id="favoritesPanel" class="hidden max-w-lg mx-auto px-4 py-5 pb-28">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-xl font-bold text-gray-700">❤️ 我的收藏</h2>
+    <span class="text-xs text-gray-400" id="favCount"></span>
+  </div>
+  <div id="favoritesList" class="space-y-2"></div>
+  <div id="favEmpty" class="empty-state hidden">
+    <span class="icon">📭</span><p class="text-sm">还没有收藏，去抽一签吧</p>
+  </div>
+</div>
+
+<!-- ====== 历史面板 ====== -->
+<div id="historyPanel" class="hidden max-w-lg mx-auto px-4 py-5 pb-28">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-xl font-bold text-gray-700">📋 抽签历史</h2>
+    <button onclick="clearHistory()" class="text-xs text-gray-400 hover:text-red-400 transition">清空全部</button>
+  </div>
+  <div id="historyList" class="space-y-2"></div>
+  <div id="histEmpty" class="empty-state hidden">
+    <span class="icon">🎯</span><p class="text-sm">还没有抽过签</p>
+  </div>
+</div>
+
+<!-- ====== 不喜欢管理面板 ====== -->
+<div id="dislikesInfo" class="hidden max-w-lg mx-auto px-4 pb-28">
+  <p class="text-xs text-gray-400 text-center mt-4">
+    已屏蔽 <span id="dislikeCount">0</span> 项 ·
+    <button onclick="resetDislikes()" class="underline hover:text-red-400">重置全部</button>
+  </p>
+</div>
+
+<script>
+// =====================================================
+//  配  置
+// =====================================================
+const AMAP_KEY = 'de5537e4b72096b047a79dacd0937f87';
+
+// =====================================================
+//  数据库
+// =====================================================
+const FOOD_DB = [
+{ id:'f1', name:'麻婆豆腐', cat:'中餐', emoji:'🥘', detail:'麻辣烫香酥嫩鲜，豆腐裹满红亮酱汁，拌饭三碗起步', price:'¥20', delivery:true, hot:false },
+  { id:'f2', name:'回锅肉', cat:'中餐', emoji:'🥩', detail:'二刀肉配蒜苗豆瓣酱，焦香卷曲灯盏窝，川菜之首', price:'¥32', delivery:true, hot:false },
+  { id:'f3', name:'鱼香肉丝', cat:'中餐', emoji:'🥢', detail:'泡椒葱姜蒜调出鱼香味，肉丝嫩滑木耳爽脆，下饭神器', price:'¥28', delivery:true, hot:false },
+  { id:'f4', name:'宫保鸡丁', cat:'中餐', emoji:'🐔', detail:'糊辣荔枝味，鸡丁滑嫩花生酥脆，跨国界人气王', price:'¥30', delivery:true, hot:false },
+  { id:'f5', name:'水煮牛肉', cat:'中餐', emoji:'🌶️', detail:'滚烫红油浇下滋啦作响，牛肉嫩滑麻辣鲜香', price:'¥52', delivery:true, hot:false },
+  { id:'f6', name:'夫妻肺片', cat:'中餐', emoji:'🫁', detail:'牛杂薄片拌红油，麻辣回甜，成都街头经典', price:'¥38', delivery:true, hot:false },
+  { id:'f7', name:'担担面', cat:'中餐', emoji:'🍜', detail:'碎肉末+花生碎+红油，麻辣鲜香，四川面食之王', price:'¥15', delivery:true, hot:false },
+  { id:'f8', name:'辣子鸡丁', cat:'中餐', emoji:'🐔', detail:'干辣椒堆里找鸡丁，外酥里嫩麻辣过瘾', price:'¥42', delivery:true, hot:false },
+  { id:'f9', name:'酸菜鱼', cat:'中餐', emoji:'🐟', detail:'老坛酸菜配嫩滑鱼片，酸辣开胃，汤都能喝光', price:'¥58', delivery:true, hot:true },
+  { id:'f10', name:'毛血旺', cat:'中餐', emoji:'🩸', detail:'鸭血毛肚午餐肉，红油翻滚麻辣鲜香，江湖菜代表', price:'¥48', delivery:true, hot:false },
+  { id:'f11', name:'开水白菜', cat:'中餐', emoji:'🥬', detail:'国宴名菜，看似清汤寡水实则鸡鸭火腿吊出高汤', price:'¥88', delivery:false, hot:false },
+  { id:'f12', name:'蒜泥白肉', cat:'中餐', emoji:'🥩', detail:'薄切五花肉配蒜泥红油，肥而不腻入口即化', price:'¥32', delivery:true, hot:false },
+  { id:'f13', name:'鱼香茄子', cat:'中餐', emoji:'🍆', detail:'没有鱼的鱼香味，茄子软糯入味，米饭杀手', price:'¥22', delivery:true, hot:false },
+  { id:'f14', name:'干煸四季豆', cat:'中餐', emoji:'🫘', detail:'四季豆煸至虎皮状，配肉末芽菜，咸香下饭', price:'¥18', delivery:true, hot:false },
+  { id:'f15', name:'口水鸡', cat:'中餐', emoji:'🐔', detail:'红油芝麻花椒，麻辣鲜香嫩爽，看着就流口水', price:'¥36', delivery:true, hot:false },
+  { id:'f16', name:'樟茶鸭', cat:'中餐', emoji:'🦆', detail:'樟木茶叶熏制，皮酥肉嫩烟熏香，川菜名品', price:'¥58', delivery:false, hot:false },
+  { id:'f17', name:'灯影牛肉', cat:'中餐', emoji:'🥩', detail:'牛肉薄如纸透光可见，麻辣回甜，佐酒佳品', price:'¥28', delivery:true, hot:false },
+  { id:'f18', name:'东坡肘子', cat:'中餐', emoji:'🍖', detail:'猪肘炖至软烂，酱汁浓郁，肥而不腻', price:'¥68', delivery:false, hot:false },
+  { id:'f19', name:'钵钵鸡', cat:'中餐', emoji:'🐔', detail:'红油芝麻+冷锅串串，麻辣鲜香停不下来', price:'¥35', delivery:true, hot:false },
+  { id:'f20', name:'冒菜', cat:'中餐', emoji:'🥘', detail:'一个人的火锅，自选菜品麻辣烫煮，成都老味道', price:'¥28', delivery:true, hot:true },
+  { id:'f21', name:'甜水面', cat:'中餐', emoji:'🍜', detail:'粗面条配甜酱油+红油+芝麻酱，甜辣筋道', price:'¥12', delivery:true, hot:false },
+  { id:'f22', name:'钟水饺', cat:'中餐', emoji:'🥟', detail:'纯肉馅水饺淋红油蒜泥，皮薄馅嫩甜辣鲜', price:'¥16', delivery:true, hot:false },
+  { id:'f23', name:'赖汤圆', cat:'中餐', emoji:'🍡', detail:'糯米皮包黑芝麻馅，软糯香甜不腻口', price:'¥12', delivery:true, hot:false },
+  { id:'f24', name:'龙抄手', cat:'中餐', emoji:'🥟', detail:'皮薄馅大汤鲜，红油/清汤两吃，成都名小吃', price:'¥18', delivery:true, hot:false },
+  { id:'f25', name:'叶儿粑', cat:'中餐', emoji:'🍃', detail:'糯米皮包肉馅，裹粽叶蒸制，清香软糯', price:'¥10', delivery:true, hot:false },
+  { id:'f26', name:'三大炮', cat:'中餐', emoji:'🍡', detail:'糯米团砸铜盘三响，裹黄豆粉淋红糖，成都特色', price:'¥10', delivery:false, hot:false },
+  { id:'f27', name:'宜宾燃面', cat:'中餐', emoji:'🍜', detail:'干拌面配碎米芽菜花生碎，油重无水一点即燃', price:'¥14', delivery:true, hot:false },
+  { id:'f28', name:'乐山甜皮鸭', cat:'中餐', emoji:'🦆', detail:'卤制后刷麦芽糖烤制，皮甜肉嫩，乐山名吃', price:'¥38', delivery:true, hot:false },
+  { id:'f29', name:'自贡冷吃兔', cat:'中餐', emoji:'🐰', detail:'兔肉丁干煸麻辣，越嚼越香，自贡盐帮菜代表', price:'¥35', delivery:true, hot:false },
+  { id:'f30', name:'江油肥肠', cat:'中餐', emoji:'🫁', detail:'红烧肥肠软糯入味，配米饭一绝，江油特色', price:'¥28', delivery:true, hot:false },
+  { id:'f31', name:'白切鸡', cat:'中餐', emoji:'🐓', detail:'皮爽肉滑骨中带血，蘸姜葱油，粤菜原味极致', price:'¥48', delivery:true, hot:false },
+  { id:'f32', name:'烧鹅', cat:'中餐', emoji:'🦆', detail:'荔枝木炭烤，皮脆肉嫩，蘸酸梅酱解腻', price:'¥68', delivery:false, hot:false },
+  { id:'f33', name:'蜜汁叉烧', cat:'中餐', emoji:'🥩', detail:'猪梅花肉刷麦芽糖烤制，甜香焦脆，烧腊之王', price:'¥38', delivery:true, hot:false },
+  { id:'f34', name:'虾饺皇', cat:'中餐', emoji:'🥟', detail:'皮薄馅大整只鲜虾，广式早茶必点一笼', price:'¥32', delivery:true, hot:false },
+  { id:'f35', name:'干炒牛河', cat:'中餐', emoji:'🍜', detail:'河粉+牛肉+芽菜猛火快炒，镬气十足', price:'¥28', delivery:true, hot:false },
+  { id:'f36', name:'煲仔饭', cat:'中餐', emoji:'🍚', detail:'腊味+米饭砂锅煲制，锅巴焦香淋酱油', price:'¥35', delivery:true, hot:false },
+  { id:'f37', name:'肠粉', cat:'中餐', emoji:'🫔', detail:'米浆蒸制薄如蝉翼，裹虾仁/牛肉淋豉油', price:'¥15', delivery:true, hot:false },
+  { id:'f38', name:'豉汁蒸凤爪', cat:'中餐', emoji:'🐔', detail:'凤爪先炸后蒸，豉汁入味软糯脱骨', price:'¥25', delivery:true, hot:false },
+  { id:'f39', name:'菠萝咕咾肉', cat:'中餐', emoji:'🍍', detail:'猪里脊裹粉炸酥，菠萝糖醋汁酸甜可口', price:'¥32', delivery:true, hot:false },
+  { id:'f40', name:'清蒸石斑鱼', cat:'中餐', emoji:'🐟', detail:'鲜活石斑清蒸，葱丝淋热油，鲜甜嫩滑', price:'¥128', delivery:false, hot:false },
+  { id:'f41', name:'盐焗鸡', cat:'中餐', emoji:'🐔', detail:'粗盐焗制锁住鸡汁，皮爽肉滑咸香入味', price:'¥58', delivery:true, hot:false },
+  { id:'f42', name:'梅菜扣肉', cat:'中餐', emoji:'🥩', detail:'五花肉+梅干菜蒸制，肥而不腻入口即化', price:'¥38', delivery:true, hot:false },
+  { id:'f43', name:'白灼虾', cat:'中餐', emoji:'🦐', detail:'鲜虾白灼蘸姜葱酱油，原汁原味鲜甜弹牙', price:'¥68', delivery:true, hot:false },
+  { id:'f44', name:'老火靓汤', cat:'中餐', emoji:'🍲', detail:'慢火煲三小时以上，西洋菜陈肾/五指毛桃炖鸡', price:'¥28', delivery:true, hot:false },
+  { id:'f45', name:'烧乳猪', cat:'中餐', emoji:'🐷', detail:'整只乳猪炭火烤制，皮脆肉嫩，宴席头盘', price:'¥188', delivery:false, hot:false },
+  { id:'f46', name:'蚝油牛肉', cat:'中餐', emoji:'🥩', detail:'牛肉片猛火快炒蚝油调味，嫩滑鲜香', price:'¥38', delivery:true, hot:false },
+  { id:'f47', name:'客家酿豆腐', cat:'中餐', emoji:'🫘', detail:'豆腐酿肉馅煎至金黄，客家经典家常菜', price:'¥25', delivery:true, hot:false },
+  { id:'f48', name:'沙茶牛肉', cat:'中餐', emoji:'🥩', detail:'潮汕沙茶酱炒牛肉，咸香微辣下饭神器', price:'¥35', delivery:true, hot:false },
+  { id:'f49', name:'潮汕牛肉丸', cat:'中餐', emoji:'🫘', detail:'手打牛肉丸弹牙爆汁，配粿条汤一绝', price:'¥22', delivery:true, hot:false },
+  { id:'f50', name:'生腌海鲜', cat:'中餐', emoji:'🦀', detail:'潮汕生腌膏蟹/皮皮虾，鲜甜滑嫩海洋冰淇淋', price:'¥88', delivery:false, hot:false },
+  { id:'f51', name:'双皮奶', cat:'中餐', emoji:'🥛', detail:'顺德水牛奶双层奶皮，红豆芒果随心搭配', price:'¥16', delivery:true, hot:false },
+  { id:'f52', name:'杨枝甘露', cat:'中餐', emoji:'🥭', detail:'芒果+西柚+西米+椰浆，港式经典清甜消暑', price:'¥22', delivery:true, hot:false },
+  { id:'f53', name:'云吞面', cat:'中餐', emoji:'🍜', detail:'鲜虾云吞+竹升面+大地鱼汤底，港式经典', price:'¥25', delivery:true, hot:false },
+  { id:'f54', name:'避风塘炒蟹', cat:'中餐', emoji:'🦀', detail:'蒜蓉面包糠炒蟹，香辣酥脆，香港名菜', price:'¥128', delivery:false, hot:false },
+  { id:'f55', name:'盆菜', cat:'中餐', emoji:'🍲', detail:'层层码放鲍参翅肚花菇，围村宴席大菜', price:'¥288', delivery:false, hot:false },
+  { id:'f56', name:'剁椒鱼头', cat:'中餐', emoji:'🐟', detail:'胖头鱼配剁椒蒸制，鲜辣过瘾，汤汁拌面一绝', price:'¥58', delivery:true, hot:true },
+  { id:'f57', name:'辣椒炒肉', cat:'中餐', emoji:'🌶️', detail:'螺丝椒+五花肉猛火爆炒，湖南人灵魂下饭菜', price:'¥28', delivery:true, hot:false },
+  { id:'f58', name:'毛氏红烧肉', cat:'中餐', emoji:'🥘', detail:'不放酱油用糖色炒制，香甜辣版红烧肉', price:'¥48', delivery:true, hot:false },
+  { id:'f59', name:'永州血鸭', cat:'中餐', emoji:'🦆', detail:'鸭肉斩碎炒制淋鸭血凝固成酱，香辣浓郁', price:'¥42', delivery:true, hot:false },
+  { id:'f60', name:'东安子鸡', cat:'中餐', emoji:'🐔', detail:'米醋+辣椒+姜丝烹鸡，酸辣鲜嫩，湘菜之首', price:'¥38', delivery:true, hot:false },
+  { id:'f61', name:'腊味合蒸', cat:'中餐', emoji:'🥓', detail:'腊肉腊鱼腊肠同蒸，腊香浓郁，湖南年味', price:'¥45', delivery:true, hot:false },
+  { id:'f62', name:'口味虾', cat:'中餐', emoji:'🦞', detail:'小龙虾麻辣鲜香，长沙夜宵之王', price:'¥68', delivery:true, hot:true },
+  { id:'f63', name:'臭豆腐', cat:'中餐', emoji:'🫘', detail:'外焦里嫩灌汤入味，闻着臭吃着香，长沙名片', price:'¥12', delivery:false, hot:true },
+  { id:'f64', name:'糖油粑粑', cat:'中餐', emoji:'🍡', detail:'糯米团油炸裹糖浆，外酥里糯甜而不腻', price:'¥8', delivery:false, hot:false },
+  { id:'f65', name:'小炒黄牛肉', cat:'中餐', emoji:'🥩', detail:'黄牛肉+小米辣+香菜爆炒，鲜辣嫩滑', price:'¥42', delivery:true, hot:false },
+  { id:'f66', name:'外婆菜', cat:'中餐', emoji:'🥬', detail:'萝卜干梅干菜炒肉末，咸香下饭，湘西特色', price:'¥18', delivery:true, hot:false },
+  { id:'f67', name:'攸县香干', cat:'中餐', emoji:'🫘', detail:'攸县豆腐干炒五花肉，豆香浓郁口感扎实', price:'¥22', delivery:true, hot:false },
+  { id:'f68', name:'湘西土匪鸭', cat:'中餐', emoji:'🦆', detail:'鸭肉+干辣椒+花椒焖烧，麻辣霸道', price:'¥48', delivery:true, hot:false },
+  { id:'f69', name:'发丝牛百叶', cat:'中餐', emoji:'🥩', detail:'牛百叶切发丝般细，酸辣脆爽，刀工名菜', price:'¥52', delivery:false, hot:false },
+  { id:'f70', name:'组庵鱼翅', cat:'中餐', emoji:'🦈', detail:'鱼翅+鸡肉+火腿慢炖，谭延闿家传名菜', price:'¥288', delivery:false, hot:false },
+  { id:'f71', name:'浏阳蒸菜', cat:'中餐', emoji:'🍱', detail:'小碗蒸制腊味/排骨/鱼头，原汁原味', price:'¥25', delivery:true, hot:false },
+  { id:'f72', name:'常德牛肉粉', cat:'中餐', emoji:'🍜', detail:'红烧牛肉浇头+米粉，汤浓肉香，常德人早餐', price:'¥16', delivery:true, hot:false },
+  { id:'f73', name:'岳阳姜辣蛇', cat:'中餐', emoji:'🐍', detail:'老姜+干辣椒焖蛇段，姜辣浓郁，岳阳特色', price:'¥128', delivery:false, hot:false },
+  { id:'f74', name:'吉首酸肉', cat:'中餐', emoji:'🥩', detail:'猪肉酸制发酵后炒制，酸辣开胃，湘西特色', price:'¥32', delivery:true, hot:false },
+  { id:'f75', name:'平江火焙鱼', cat:'中餐', emoji:'🐟', detail:'小鱼焙干后炒辣椒，咸香酥脆，下酒好菜', price:'¥22', delivery:true, hot:false },
+  { id:'f76', name:'九转大肠', cat:'中餐', emoji:'🫁', detail:'大肠层层套叠，酸甜苦辣咸五味俱全，济南名菜', price:'¥68', delivery:false, hot:false },
+  { id:'f77', name:'葱烧海参', cat:'中餐', emoji:'🥒', detail:'山东大葱+海参红烧，葱香浓郁海参软糯', price:'¥128', delivery:false, hot:false },
+  { id:'f78', name:'糖醋鲤鱼', cat:'中餐', emoji:'🐟', detail:'黄河鲤鱼炸至酥脆浇糖醋汁，鱼尾翘起跃龙门', price:'¥58', delivery:false, hot:false },
+  { id:'f79', name:'德州扒鸡', cat:'中餐', emoji:'🐔', detail:'五香脱骨扒鸡，肉烂骨酥，鲁菜经典', price:'¥45', delivery:true, hot:false },
+  { id:'f80', name:'油焖大虾', cat:'中餐', emoji:'🦐', detail:'大虾油焖至壳酥肉嫩，咸甜适口', price:'¥68', delivery:true, hot:false },
+  { id:'f81', name:'把子肉', cat:'中餐', emoji:'🥩', detail:'五花肉酱油炖至软烂，配米饭浇汁，济南名吃', price:'¥22', delivery:true, hot:false },
+  { id:'f82', name:'单县羊肉汤', cat:'中餐', emoji:'🍲', detail:'羊骨熬制汤白如奶，鲜而不膻，鲁西南名汤', price:'¥28', delivery:true, hot:false },
+  { id:'f83', name:'煎饼卷大葱', cat:'中餐', emoji:'🫓', detail:'山东煎饼+大葱+甜面酱，朴实豪爽', price:'¥8', delivery:true, hot:false },
+  { id:'f84', name:'博山豆腐箱', cat:'中餐', emoji:'🫘', detail:'豆腐挖空填馅红烧，博山传统名菜', price:'¥32', delivery:false, hot:false },
+  { id:'f85', name:'鲅鱼水饺', cat:'中餐', emoji:'🥟', detail:'新鲜鲅鱼肉做馅，鲜嫩多汁，胶东特色', price:'¥28', delivery:true, hot:false },
+  { id:'f86', name:'潍坊肉火烧', cat:'中餐', emoji:'🥮', detail:'酥皮包裹肉馅烤制，外酥里嫩，潍坊早餐', price:'¥8', delivery:true, hot:false },
+  { id:'f87', name:'油旋', cat:'中餐', emoji:'🥐', detail:'葱油面饼旋状烤制，外酥里软，济南名吃', price:'¥5', delivery:true, hot:false },
+  { id:'f88', name:'甏肉干饭', cat:'中餐', emoji:'🍚', detail:'大块五花肉+米饭，济宁传统快餐', price:'¥25', delivery:true, hot:false },
+  { id:'f89', name:'周村烧饼', cat:'中餐', emoji:'🫓', detail:'芝麻薄饼酥脆掉渣，淄博特产', price:'¥10', delivery:true, hot:false },
+  { id:'f90', name:'临沂糁汤', cat:'中餐', emoji:'🍲', detail:'牛肉/鸡肉熬制的浓稠汤羹，配油条，临沂早餐', price:'¥12', delivery:true, hot:false },
+  { id:'f91', name:'松鼠鳜鱼', cat:'中餐', emoji:'🐟', detail:'鳜鱼改刀油炸浇糖醋汁，形如松鼠，乾隆赐名', price:'¥88', delivery:false, hot:false },
+  { id:'f92', name:'清炖蟹粉狮子头', cat:'中餐', emoji:'🦀', detail:'猪肉剁碎不切+蟹粉提鲜，入口即化，扬州名菜', price:'¥58', delivery:false, hot:false },
+  { id:'f93', name:'大煮干丝', cat:'中餐', emoji:'🫘', detail:'豆腐干切细丝+鸡汤火腿煮制，刀工极致', price:'¥38', delivery:false, hot:false },
+  { id:'f94', name:'盐水鸭', cat:'中餐', emoji:'🦆', detail:'南京板鸭盐水卤制，皮白肉红咸香鲜嫩', price:'¥35', delivery:true, hot:false },
+  { id:'f95', name:'扬州炒饭', cat:'中餐', emoji:'🍚', detail:'鸡蛋虾仁火腿青豆，粒粒分明，扬州经典', price:'¥22', delivery:true, hot:false },
+  { id:'f96', name:'文思豆腐羹', cat:'中餐', emoji:'🍲', detail:'豆腐切发丝般细配香菇火腿，文人菜刀工巅峰', price:'¥48', delivery:false, hot:false },
+  { id:'f97', name:'水晶肴肉', cat:'中餐', emoji:'🥩', detail:'猪蹄膀硝制后晶莹剔透，蘸姜丝醋，镇江名菜', price:'¥38', delivery:true, hot:false },
+  { id:'f98', name:'叫花鸡', cat:'中餐', emoji:'🐔', detail:'整鸡裹泥烤制，敲开泥壳香气四溢，常熟名菜', price:'¥68', delivery:false, hot:false },
+  { id:'f99', name:'响油鳝糊', cat:'中餐', emoji:'🐍', detail:'鳝鱼丝上桌浇热油滋啦作响，浓油赤酱', price:'¥58', delivery:false, hot:false },
+  { id:'f100', name:'蟹黄汤包', cat:'中餐', emoji:'🥟', detail:'皮薄如纸汤汁丰盈，先开窗后喝汤，靖江名点', price:'¥28', delivery:true, hot:false },
+  { id:'f101', name:'三套鸭', cat:'中餐', emoji:'🦆', detail:'家鸭套野鸭套鸽子，层层嵌套炖制，扬州功夫菜', price:'¥128', delivery:false, hot:false },
+  { id:'f102', name:'无锡排骨', cat:'中餐', emoji:'🍖', detail:'猪肋排酱烧至骨酥肉烂，咸中带甜，无锡名菜', price:'¥48', delivery:true, hot:false },
+  { id:'f103', name:'鸭血粉丝汤', cat:'中餐', emoji:'🍲', detail:'鸭血+粉丝+鸭胗鸭肝，南京街头灵魂', price:'¥16', delivery:true, hot:false },
+  { id:'f104', name:'万三蹄', cat:'中餐', emoji:'🍖', detail:'猪蹄膀红烧至软糯，周庄沈万三家传名菜', price:'¥58', delivery:true, hot:false },
+  { id:'f105', name:'碧螺虾仁', cat:'中餐', emoji:'🦐', detail:'太湖白虾仁配碧螺春茶，茶香清雅江南春味', price:'¥68', delivery:false, hot:false },
+  { id:'f106', name:'东坡肉', cat:'中餐', emoji:'🥘', detail:'五花肉加黄酒慢煨，肥而不腻，苏东坡最爱', price:'¥48', delivery:true, hot:false },
+  { id:'f107', name:'西湖醋鱼', cat:'中餐', emoji:'🐟', detail:'草鱼汆熟浇糖醋汁，鱼肉鲜嫩酸甜适口', price:'¥58', delivery:false, hot:false },
+  { id:'f108', name:'龙井虾仁', cat:'中餐', emoji:'🦐', detail:'河虾仁配西湖龙井茶，茶香清雅江南春味', price:'¥68', delivery:false, hot:false },
+  { id:'f109', name:'叫花鸡', cat:'中餐', emoji:'🐔', detail:'整鸡裹荷叶泥壳烤制，杭州传统名菜', price:'¥68', delivery:false, hot:false },
+  { id:'f110', name:'宋嫂鱼羹', cat:'中餐', emoji:'🍲', detail:'鳜鱼蒸熟拆肉+火腿笋丝煮羹，鲜美赛蟹肉', price:'¥48', delivery:false, hot:false },
+  { id:'f111', name:'干炸响铃', cat:'中餐', emoji:'🫔', detail:'豆腐皮卷炸至酥脆，蘸甜酱椒盐，杭州名菜', price:'¥28', delivery:true, hot:false },
+  { id:'f112', name:'梅干菜烧肉', cat:'中餐', emoji:'🥩', detail:'绍兴梅干菜+五花肉慢炖，咸香下饭', price:'¥32', delivery:true, hot:false },
+  { id:'f113', name:'嘉兴粽子', cat:'中餐', emoji:'🫔', detail:'鲜肉/蛋黄/豆沙粽，糯而不烂肥而不腻', price:'¥10', delivery:true, hot:false },
+  { id:'f114', name:'宁波汤团', cat:'中餐', emoji:'🍡', detail:'猪油黑芝麻馅水磨糯米皮，宁波名点', price:'¥12', delivery:true, hot:false },
+  { id:'f115', name:'西湖莼菜汤', cat:'中餐', emoji:'🍲', detail:'莼菜滑嫩+火腿丝鸡丝，清鲜淡雅', price:'¥28', delivery:false, hot:false },
+  { id:'f116', name:'冰糖甲鱼', cat:'中餐', emoji:'🐢', detail:'甲鱼+冰糖红烧，宁波传统名菜', price:'¥128', delivery:false, hot:false },
+  { id:'f117', name:'雪菜大黄鱼', cat:'中餐', emoji:'🐟', detail:'舟山大黄鱼+雪菜笋丝清蒸，鲜掉眉毛', price:'¥88', delivery:false, hot:false },
+  { id:'f118', name:'绍兴醉鸡', cat:'中餐', emoji:'🐔', detail:'鸡肉用绍兴黄酒浸泡，酒香浓郁肉质鲜嫩', price:'¥32', delivery:true, hot:false },
+  { id:'f119', name:'片儿川', cat:'中餐', emoji:'🍜', detail:'雪菜笋片肉丝面，杭州人最爱的面食', price:'¥16', delivery:true, hot:false },
+  { id:'f120', name:'金华火腿', cat:'中餐', emoji:'🥓', detail:'金华两头乌猪腿腌制风干，鲜香浓郁', price:'¥88', delivery:true, hot:false },
+  { id:'f121', name:'佛跳墙', cat:'中餐', emoji:'🍲', detail:'鲍参翅肚18种食材陶罐慢炖，香气引得佛跳墙', price:'¥288', delivery:false, hot:true },
+  { id:'f122', name:'荔枝肉', cat:'中餐', emoji:'🍖', detail:'猪肉切花刀炸成荔枝状配马蹄红糟，酸甜适口', price:'¥32', delivery:true, hot:false },
+  { id:'f123', name:'蚵仔煎', cat:'中餐', emoji:'🦪', detail:'海蛎+番薯粉煎至焦脆蘸甜辣酱，闽南街头经典', price:'¥18', delivery:true, hot:false },
+  { id:'f124', name:'沙茶面', cat:'中餐', emoji:'🍜', detail:'沙茶酱+花生酱熬汤配海鲜豆腐，厦门灵魂', price:'¥22', delivery:true, hot:false },
+  { id:'f125', name:'土笋冻', cat:'中餐', emoji:'🫗', detail:'沙虫熬制胶质凝固成冻，蘸酱油醋蒜蓉，闽南特色', price:'¥15', delivery:false, hot:false },
+  { id:'f126', name:'福州鱼丸', cat:'中餐', emoji:'🍡', detail:'鳗鱼肉打制包猪肉馅，Q弹爆汁，福州名吃', price:'¥16', delivery:true, hot:false },
+  { id:'f127', name:'莆田卤面', cat:'中餐', emoji:'🍜', detail:'海鲜+瘦肉+香菇浓汤煮面，莆田宴席主食', price:'¥22', delivery:true, hot:false },
+  { id:'f128', name:'福鼎肉片', cat:'中餐', emoji:'🥩', detail:'猪肉泥+淀粉打制滑嫩，酸辣汤底，福鼎名小吃', price:'¥15', delivery:true, hot:false },
+  { id:'f129', name:'鼎边糊', cat:'中餐', emoji:'🍲', detail:'米浆淋锅边烫熟铲入汤中，福州早餐经典', price:'¥10', delivery:true, hot:false },
+  { id:'f130', name:'姜母鸭', cat:'中餐', emoji:'🦆', detail:'老姜+麻油+米酒焖鸭，温补驱寒，闽南名菜', price:'¥58', delivery:true, hot:false },
+  { id:'f131', name:'海蛎煎', cat:'中餐', emoji:'🦪', detail:'鲜海蛎+鸡蛋+蒜苗煎制，蘸甜辣酱，闽南经典', price:'¥18', delivery:true, hot:false },
+  { id:'f132', name:'扁肉燕', cat:'中餐', emoji:'🥟', detail:'猪肉打制薄皮包肉馅，太平燕福州宴席必备', price:'¥16', delivery:true, hot:false },
+  { id:'f133', name:'七星鱼丸', cat:'中餐', emoji:'🍡', detail:'七种鱼肉打制包馅鱼丸，福州传统名吃', price:'¥22', delivery:true, hot:false },
+  { id:'f134', name:'醉排骨', cat:'中餐', emoji:'🍖', detail:'排骨炸酥后酒酿调味，酸甜酒香，福州名菜', price:'¥38', delivery:true, hot:false },
+  { id:'f135', name:'沙县拌面', cat:'中餐', emoji:'🍜', detail:'花生酱拌面+扁肉，国民套餐经济实惠', price:'¥12', delivery:true, hot:false },
+  { id:'f136', name:'臭鳜鱼', cat:'中餐', emoji:'🐟', detail:'鳜鱼轻微发酵后红烧，闻臭吃香，徽商保鲜术', price:'¥68', delivery:false, hot:false },
+  { id:'f137', name:'毛豆腐', cat:'中餐', emoji:'🫘', detail:'豆腐发酵长白毛后煎制，外焦里嫩独特风味', price:'¥22', delivery:true, hot:false },
+  { id:'f138', name:'胡适一品锅', cat:'中餐', emoji:'🍲', detail:'蛋饺鸡肉冬笋层层码放文火慢炖，胡适待客菜', price:'¥88', delivery:false, hot:false },
+  { id:'f139', name:'符离集烧鸡', cat:'中餐', emoji:'🐔', detail:'符离集特产烧鸡，肉烂脱骨香气四溢', price:'¥38', delivery:true, hot:false },
+  { id:'f140', name:'黄山炖鸽', cat:'中餐', emoji:'🕊️', detail:'鸽子+山药+枸杞清炖，黄山养生名菜', price:'¥68', delivery:false, hot:false },
+  { id:'f141', name:'李鸿章大杂烩', cat:'中餐', emoji:'🍲', detail:'海参鱼肚鸡肉等杂烩，合肥传统名菜', price:'¥98', delivery:false, hot:false },
+  { id:'f142', name:'火腿炖甲鱼', cat:'中餐', emoji:'🐢', detail:'徽州火腿+甲鱼慢炖，鲜香浓郁滋补佳品', price:'¥158', delivery:false, hot:false },
+  { id:'f143', name:'三河米饺', cat:'中餐', emoji:'🥟', detail:'米粉皮包馅油炸，外酥里嫩，三河古镇名吃', price:'¥8', delivery:true, hot:false },
+  { id:'f144', name:'黄山烧饼', cat:'中餐', emoji:'🥮', detail:'梅干菜+猪肉馅酥皮烤制，黄山特产', price:'¥5', delivery:true, hot:false },
+  { id:'f145', name:'淮南牛肉汤', cat:'中餐', emoji:'🍲', detail:'牛骨熬汤+粉丝+豆皮+牛肉片，淮南早餐灵魂', price:'¥15', delivery:true, hot:false },
+  { id:'f146', name:'太和板面', cat:'中餐', emoji:'🍜', detail:'宽面+羊肉臊子+辣椒，劲道香辣，太和名吃', price:'¥14', delivery:true, hot:false },
+  { id:'f147', name:'吴山贡鹅', cat:'中餐', emoji:'🦆', detail:'卤制老鹅肉质紧实，合肥吴山特产', price:'¥48', delivery:true, hot:false },
+  { id:'f148', name:'北京烤鸭', cat:'中餐', emoji:'🦆', detail:'果木炭烤，皮酥肉嫩，片鸭配甜面酱葱丝卷饼', price:'¥168', delivery:false, hot:true },
+  { id:'f149', name:'涮羊肉', cat:'中餐', emoji:'🐑', detail:'铜锅炭火清汤涮鲜切羊肉，蘸麻酱韭菜花', price:'¥98', delivery:false, hot:false },
+  { id:'f150', name:'炸酱面', cat:'中餐', emoji:'🍜', detail:'黄酱+甜面酱炒肉丁，配八种菜码拌面', price:'¥18', delivery:true, hot:false },
+  { id:'f151', name:'炒肝', cat:'中餐', emoji:'🫁', detail:'猪肝猪肠蒜末勾芡，配包子，北京早餐', price:'¥12', delivery:true, hot:false },
+  { id:'f152', name:'爆肚', cat:'中餐', emoji:'🫁', detail:'鲜牛百叶/羊肚沸水汆烫蘸麻酱，脆嫩鲜香', price:'¥38', delivery:false, hot:false },
+  { id:'f153', name:'豆汁焦圈', cat:'中餐', emoji:'🥤', detail:'绿豆发酵酸味饮品配焦圈咸菜，老北京味道', price:'¥8', delivery:true, hot:false },
+  { id:'f154', name:'卤煮火烧', cat:'中餐', emoji:'🍲', detail:'猪肠猪肺豆腐火烧同煮，北京重口味名吃', price:'¥25', delivery:true, hot:false },
+  { id:'f155', name:'京酱肉丝', cat:'中餐', emoji:'🥩', detail:'猪里脊丝+甜面酱炒制，配豆腐皮卷葱丝', price:'¥32', delivery:true, hot:false },
+  { id:'f156', name:'乾隆白菜', cat:'中餐', emoji:'🥬', detail:'白菜心拌芝麻酱+蜂蜜+醋，爽脆开胃', price:'¥18', delivery:true, hot:false },
+  { id:'f157', name:'小吊梨汤', cat:'中餐', emoji:'🍐', detail:'雪花梨+银耳+冰糖慢炖，润肺止咳老北京饮品', price:'¥15', delivery:true, hot:false },
+  { id:'f158', name:'豌豆黄', cat:'中餐', emoji:'🍮', detail:'豌豆泥+糖凝固切块，细腻清甜，宫廷点心', price:'¥12', delivery:true, hot:false },
+  { id:'f159', name:'驴打滚', cat:'中餐', emoji:'🍡', detail:'糯米卷红豆沙裹黄豆粉，软糯香甜', price:'¥10', delivery:true, hot:false },
+  { id:'f160', name:'艾窝窝', cat:'中餐', emoji:'🍡', detail:'糯米包核桃芝麻白糖馅，雪白软糯', price:'¥8', delivery:true, hot:false },
+  { id:'f161', name:'冰糖葫芦', cat:'中餐', emoji:'🍡', detail:'山楂串裹冰糖衣，酸甜酥脆，老北京记忆', price:'¥8', delivery:false, hot:false },
+  { id:'f162', name:'门钉肉饼', cat:'中餐', emoji:'🥮', detail:'牛肉大葱馅厚饼煎制，形如门钉，北京名吃', price:'¥8', delivery:true, hot:false },
+  { id:'f163', name:'番茄炒蛋', cat:'中餐', emoji:'🍳', detail:'国民第一家常菜，酸甜番茄汁浸润蓬松蛋块，拌饭一绝', price:'¥16', delivery:true, hot:false },
+  { id:'f164', name:'红烧肉', cat:'中餐', emoji:'🥘', detail:'五花肉裹琥珀色酱汁，肥而不腻入口即化', price:'¥45', delivery:true, hot:false },
+  { id:'f165', name:'糖醋里脊', cat:'中餐', emoji:'🍖', detail:'外酥里嫩酸甜适口，色泽红亮，大人小孩都无法拒绝', price:'¥35', delivery:true, hot:false },
+  { id:'f166', name:'糖醋排骨', cat:'中餐', emoji:'🦴', detail:'黄金糖醋比例，排骨酥烂挂汁，童年年味记忆', price:'¥42', delivery:true, hot:false },
+  { id:'f167', name:'青椒肉丝', cat:'中餐', emoji:'🫑', detail:'青椒爽脆肉丝嫩滑，5分钟快手国民下饭菜', price:'¥22', delivery:true, hot:false },
+  { id:'f168', name:'酸辣土豆丝', cat:'中餐', emoji:'🥔', detail:'土豆丝焯水猛火爆炒淋香醋，脆而不生', price:'¥14', delivery:true, hot:false },
+  { id:'f169', name:'地三鲜', cat:'中餐', emoji:'🍆', detail:'土豆茄子青椒过油红烧，东北家常经典', price:'¥22', delivery:true, hot:false },
+  { id:'f170', name:'手撕包菜', cat:'中餐', emoji:'🥬', detail:'包菜手撕+干辣椒+五花肉爆炒，麻辣鲜香', price:'¥18', delivery:true, hot:false },
+  { id:'f171', name:'蒜蓉西兰花', cat:'中餐', emoji:'🥦', detail:'西兰花焯水配蒜蓉清炒，清爽解腻健康担当', price:'¥16', delivery:true, hot:false },
+  { id:'f172', name:'家常豆腐', cat:'中餐', emoji:'🫘', detail:'老豆腐煎至金黄+木耳青椒红烧，咸香下饭', price:'¥18', delivery:true, hot:false },
+  { id:'f173', name:'干煸豆角', cat:'中餐', emoji:'🫘', detail:'豆角煸至虎皮+肉末芽菜，咸香微辣', price:'¥18', delivery:true, hot:false },
+  { id:'f174', name:'木须肉', cat:'中餐', emoji:'🥒', detail:'猪肉+鸡蛋+木耳+黄花菜，北京家常经典', price:'¥25', delivery:true, hot:false },
+  { id:'f175', name:'可乐鸡翅', cat:'中餐', emoji:'🍗', detail:'鸡翅+可乐+酱油焖煮，甜咸入味，孩子最爱', price:'¥28', delivery:true, hot:false },
+  { id:'f176', name:'红烧排骨', cat:'中餐', emoji:'🍖', detail:'排骨炖至软烂脱骨酱汁浓郁，自带仪式感', price:'¥48', delivery:true, hot:false },
+  { id:'f177', name:'玉米排骨汤', cat:'中餐', emoji:'🍲', detail:'玉米+排骨清炖，汤鲜味美营养丰富', price:'¥32', delivery:true, hot:false },
+  { id:'f178', name:'紫菜蛋花汤', cat:'中餐', emoji:'🍲', detail:'紫菜+蛋花+虾皮，简单快手家常汤品', price:'¥8', delivery:true, hot:false },
+  { id:'f179', name:'蛋炒饭', cat:'中餐', emoji:'🍚', detail:'隔夜饭+鸡蛋+葱花，粒粒分明镬气十足', price:'¥12', delivery:true, hot:false },
+  { id:'f180', name:'葱油拌面', cat:'中餐', emoji:'🍜', detail:'热油浇葱花+酱油拌面，简单却极致美味', price:'¥10', delivery:true, hot:false },
+  { id:'f181', name:'皮蛋豆腐', cat:'中餐', emoji:'🫘', detail:'嫩豆腐+皮蛋+酱油香油，凉菜经典', price:'¥12', delivery:true, hot:false },
+  { id:'f182', name:'拍黄瓜', cat:'中餐', emoji:'🥒', detail:'黄瓜拍碎+蒜泥+醋+辣椒油，爽脆开胃', price:'¥10', delivery:true, hot:false },
+  { id:'f183', name:'兰州牛肉面', cat:'中餐', emoji:'🍜', detail:'一清二白三红四绿五黄，手工现拉筋道弹牙', price:'¥18', delivery:true, hot:false },
+  { id:'f184', name:'陕西肉夹馍', cat:'中餐', emoji:'🥙', detail:'白吉馍夹腊汁肉，馍酥肉烂，西安灵魂', price:'¥15', delivery:true, hot:false },
+  { id:'f185', name:'陕西凉皮', cat:'中餐', emoji:'🍝', detail:'米皮+面筋+黄瓜丝+红油醋汁，夏日消暑', price:'¥12', delivery:true, hot:false },
+  { id:'f186', name:'羊肉泡馍', cat:'中餐', emoji:'🍲', detail:'掰馍+羊肉汤+粉丝+木耳，西安经典', price:'¥32', delivery:true, hot:false },
+  { id:'f187', name:'油泼面', cat:'中餐', emoji:'🍜', detail:'宽面+蒜末辣椒面淋滚油，滋啦一声香气四溢', price:'¥16', delivery:true, hot:false },
+  { id:'f188', name:'Biangbiang面', cat:'中餐', emoji:'🍜', detail:'裤带面+肉臊子+油泼辣子，陕西八大怪', price:'¥18', delivery:true, hot:false },
+  { id:'f189', name:'河南烩面', cat:'中餐', emoji:'🍜', detail:'羊骨汤+宽面+羊肉+粉条，郑州灵魂', price:'¥18', delivery:true, hot:false },
+  { id:'f190', name:'胡辣汤', cat:'中餐', emoji:'🍲', detail:'牛肉+木耳+粉条+胡椒，浓稠麻辣，河南早餐', price:'¥10', delivery:true, hot:false },
+  { id:'f191', name:'开封灌汤包', cat:'中餐', emoji:'🥟', detail:'皮薄馅大汤汁丰盈，先开窗后喝汤', price:'¥22', delivery:true, hot:false },
+  { id:'f192', name:'热干面', cat:'中餐', emoji:'🍜', detail:'碱面+芝麻酱+萝卜丁+葱花，武汉早餐之王', price:'¥8', delivery:true, hot:false },
+  { id:'f193', name:'清蒸武昌鱼', cat:'中餐', emoji:'🐟', detail:'团头鲂清蒸淋料汁，鲜而不腻，湖北名菜', price:'¥58', delivery:false, hot:false },
+  { id:'f194', name:'排骨藕汤', cat:'中餐', emoji:'🍲', detail:'洪湖莲藕+排骨慢炖，粉糯鲜甜，湖北家常', price:'¥38', delivery:true, hot:false },
+  { id:'f195', name:'鸭脖', cat:'中餐', emoji:'🦆', detail:'卤制鸭脖麻辣鲜香，武汉零食之王', price:'¥15', delivery:true, hot:false },
+  { id:'f196', name:'南昌拌粉', cat:'中餐', emoji:'🍜', detail:'米粉+花生+萝卜干+辣椒油，江西早餐灵魂', price:'¥10', delivery:true, hot:false },
+  { id:'f197', name:'藜蒿炒腊肉', cat:'中餐', emoji:'🥬', detail:'鄱阳湖藜蒿+腊肉爆炒，江西名菜', price:'¥32', delivery:true, hot:false },
+  { id:'f198', name:'瓦罐汤', cat:'中餐', emoji:'🍲', detail:'小瓦罐慢煨排骨/乌鸡/老鸭，南昌特色', price:'¥18', delivery:true, hot:false },
+  { id:'f199', name:'三杯鸡', cat:'中餐', emoji:'🐔', detail:'一杯米酒一杯酱油一杯麻油，江西/台湾名菜', price:'¥38', delivery:true, hot:false },
+  { id:'f200', name:'莲花血鸭', cat:'中餐', emoji:'🦆', detail:'鸭肉斩碎+鸭血+辣椒，江西萍乡名菜', price:'¥42', delivery:true, hot:false },
+  { id:'f201', name:'过桥米线', cat:'中餐', emoji:'🍜', detail:'滚烫鸡汤烫熟肉片蔬菜+米线，云南名片', price:'¥28', delivery:true, hot:false },
+  { id:'f202', name:'汽锅鸡', cat:'中餐', emoji:'🐔', detail:'建水紫陶汽锅蒸制，原汁原味，云南名菜', price:'¥68', delivery:false, hot:false },
+  { id:'f203', name:'野生菌火锅', cat:'中餐', emoji:'🍲', detail:'云南野生菌+土鸡熬汤，鲜美至极', price:'¥128', delivery:false, hot:true },
+  { id:'f204', name:'鲜花饼', cat:'中餐', emoji:'🥮', detail:'玫瑰花瓣做馅酥皮烤制，云南伴手礼', price:'¥8', delivery:true, hot:false },
+  { id:'f205', name:'酸汤鱼', cat:'中餐', emoji:'🐟', detail:'米汤发酵酸汤+鲜鱼，酸辣开胃，贵州灵魂', price:'¥58', delivery:true, hot:true },
+  { id:'f206', name:'肠旺面', cat:'中餐', emoji:'🍜', detail:'猪肠+血旺+脆臊+面条，贵阳早餐之王', price:'¥16', delivery:true, hot:false },
+  { id:'f207', name:'丝娃娃', cat:'中餐', emoji:'🫔', detail:'薄饼卷十几种素菜丝蘸酸汤，贵阳特色', price:'¥18', delivery:true, hot:false },
+  { id:'f208', name:'遵义羊肉粉', cat:'中餐', emoji:'🍜', detail:'羊肉片+米粉+辣椒，遵义人早餐灵魂', price:'¥16', delivery:true, hot:false },
+  { id:'f209', name:'贵州蘸水菜', cat:'中餐', emoji:'🥬', detail:'水煮时蔬配糊辣椒蘸水，清爽健康倒欠卡路里', price:'¥25', delivery:true, hot:true },
+  { id:'f210', name:'洋芋粑', cat:'中餐', emoji:'🥔', detail:'土豆泥煎至金黄外酥里嫩，贵州街头小吃', price:'¥8', delivery:true, hot:false },
+  { id:'f211', name:'新疆大盘鸡', cat:'中餐', emoji:'🐔', detail:'鸡块+土豆+宽面+辣椒，新疆硬菜', price:'¥58', delivery:true, hot:false },
+  { id:'f212', name:'手抓饭', cat:'中餐', emoji:'🍚', detail:'羊肉+胡萝卜+葡萄干+米饭，新疆特色', price:'¥35', delivery:true, hot:false },
+  { id:'f213', name:'锅包肉', cat:'中餐', emoji:'🍖', detail:'猪里脊挂糊炸酥浇糖醋汁，外酥里嫩，东北名菜', price:'¥32', delivery:true, hot:false },
+  { id:'f214', name:'猪肉炖粉条', cat:'中餐', emoji:'🍲', detail:'五花肉+粉条+酸菜慢炖，东北硬菜', price:'¥38', delivery:true, hot:false },
+  { id:'f215', name:'小鸡炖蘑菇', cat:'中餐', emoji:'🐔', detail:'土鸡+榛蘑+粉条，东北待客硬菜', price:'¥48', delivery:true, hot:false },
+  { id:'f216', name:'地三鲜', cat:'中餐', emoji:'🍆', detail:'土豆茄子青椒过油红烧，东北家常经典', price:'¥22', delivery:true, hot:false },
+  { id:'f217', name:'溜肉段', cat:'中餐', emoji:'🥩', detail:'猪里脊挂糊炸酥+青椒溜炒，外酥里嫩', price:'¥32', delivery:true, hot:false },
+  { id:'f218', name:'东北大拉皮', cat:'中餐', emoji:'🍝', detail:'粉皮+黄瓜+肉丝+麻酱，爽滑开胃', price:'¥18', delivery:true, hot:false },
+  { id:'f219', name:'得莫利炖鱼', cat:'中餐', emoji:'🐟', detail:'鲤鱼+豆腐+粉条+白菜炖制，黑龙江名菜', price:'¥48', delivery:false, hot:false },
+  { id:'f220', name:'哈尔滨红肠', cat:'中餐', emoji:'🥓', detail:'蒜香熏制猪肉肠，哈尔滨特产', price:'¥15', delivery:true, hot:false },
+  { id:'f221', name:'杀猪菜', cat:'中餐', emoji:'🍲', detail:'酸菜+血肠+白肉+粉条，东北年味', price:'¥42', delivery:true, hot:false },
+  { id:'f222', name:'雪衣豆沙', cat:'中餐', emoji:'🍡', detail:'蛋清打发裹豆沙油炸，绵软香甜，吉林名点', price:'¥18', delivery:false, hot:false },
+  { id:'f223', name:'朝鲜冷面', cat:'中餐', emoji:'🍜', detail:'荞麦面+冰镇酸甜汤+泡菜+鸡蛋，延边特色', price:'¥16', delivery:true, hot:false },
+  { id:'f224', name:'烤冷面', cat:'中餐', emoji:'🫓', detail:'铁板冷面+鸡蛋+火腿+甜辣酱，街头小吃之王', price:'¥8', delivery:false, hot:false },
+  { id:'f225', name:'烤羊肉串', cat:'中餐', emoji:'🍢', detail:'新疆羊肉炭火烤制撒孜然辣椒，烟火气十足', price:'¥5/串', delivery:true, hot:false },
+  { id:'f226', name:'手抓羊肉', cat:'中餐', emoji:'🐑', detail:'清水煮羊排蘸椒盐，原汁原味，西北豪爽', price:'¥68', delivery:true, hot:false },
+  { id:'f227', name:'烤全羊', cat:'中餐', emoji:'🐑', detail:'整只羊炭火慢烤，外焦里嫩，蒙古/新疆盛宴', price:'¥888', delivery:false, hot:false },
+  { id:'f228', name:'羊肉泡馍', cat:'中餐', emoji:'🍲', detail:'掰馍+羊肉汤+粉丝+木耳，西安经典', price:'¥32', delivery:true, hot:false },
+  { id:'f229', name:'兰州拉面', cat:'中餐', emoji:'🍜', detail:'牛肉汤+萝卜+辣油+蒜苗+香菜，一清二白', price:'¥16', delivery:true, hot:false },
+  { id:'f230', name:'酿皮子', cat:'中餐', emoji:'🍝', detail:'面粉洗出面筋蒸制凉皮，甘肃青海名吃', price:'¥10', delivery:true, hot:false },
+  { id:'f231', name:'甜醅子', cat:'中餐', emoji:'🥤', detail:'麦仁发酵酸甜饮品，甘肃夏日消暑', price:'¥8', delivery:true, hot:false },
+  { id:'f232', name:'青海土火锅', cat:'中餐', emoji:'🍲', detail:'铜锅码放羊肉丸子豆腐粉条，青海特色', price:'¥68', delivery:false, hot:false },
+  { id:'f233', name:'尕面片', cat:'中餐', emoji:'🍜', detail:'手工揪面片+羊肉臊子汤，青海家常', price:'¥15', delivery:true, hot:false },
+  { id:'f234', name:'清蒸羊羔肉', cat:'中餐', emoji:'🐑', detail:'宁夏滩羊羔肉清蒸，鲜嫩不膻', price:'¥78', delivery:false, hot:false },
+  { id:'f235', name:'羊杂碎', cat:'中餐', emoji:'🍲', detail:'羊头羊肚羊肺烩制，宁夏早餐硬核', price:'¥18', delivery:true, hot:false },
+  { id:'f236', name:'烤馕', cat:'中餐', emoji:'🫓', detail:'新疆传统面饼炭火烤制，芝麻飘香', price:'¥5', delivery:true, hot:false },
+  { id:'f237', name:'重庆老火锅', cat:'火锅', emoji:'🌶️', detail:'牛油红汤锅底，毛肚鸭肠黄喉，七上八下', price:'¥90', delivery:false, hot:false },
+  { id:'f238', name:'成都串串香', cat:'火锅', emoji:'🍢', detail:'竹签串菜涮红汤，数签结账，成都夜生活', price:'¥50', delivery:true, hot:false },
+  { id:'f239', name:'海底捞番茄锅', cat:'火锅', emoji:'🍲', detail:'酸甜浓郁番茄锅底，牛肉粒+芹菜碎，服务满分', price:'¥130', delivery:false, hot:true },
+  { id:'f240', name:'潮汕牛肉火锅', cat:'火锅', emoji:'🥩', detail:'现切新鲜牛肉，吊龙匙柄胸口朥，8秒即食', price:'¥100', delivery:false, hot:true },
+  { id:'f241', name:'椰子鸡火锅', cat:'火锅', emoji:'🥥', detail:'清甜椰子水+文昌鸡，蘸沙姜青柠酱油，清爽养生', price:'¥110', delivery:false, hot:false },
+  { id:'f242', name:'老北京铜锅涮肉', cat:'火锅', emoji:'🐑', detail:'铜锅炭火清汤涮鲜切羊肉，蘸麻酱韭菜花', price:'¥98', delivery:false, hot:false },
+  { id:'f243', name:'羊蝎子火锅', cat:'火锅', emoji:'🐑', detail:'羊脊骨炖至软烂，啃骨吸髓，冬日暖身', price:'¥78', delivery:true, hot:false },
+  { id:'f244', name:'酸汤鱼火锅', cat:'火锅', emoji:'🐟', detail:'贵州红酸汤+鲜鱼，酸辣开胃，越煮越香', price:'¥68', delivery:true, hot:false },
+  { id:'f245', name:'菌菇火锅', cat:'火锅', emoji:'🍄', detail:'云南野生菌+土鸡熬汤，鲜美至极', price:'¥128', delivery:false, hot:true },
+  { id:'f246', name:'寿喜锅', cat:'火锅', emoji:'🍲', detail:'日式甜酱油涮牛肉蘸生蛋液，关西风味', price:'¥120', delivery:false, hot:false },
+  { id:'f247', name:'部队锅', cat:'火锅', emoji:'🍲', detail:'午餐肉+香肠+拉面+芝士+泡菜，韩式治愈', price:'¥78', delivery:false, hot:true },
+  { id:'f248', name:'粥底火锅', cat:'火锅', emoji:'🍚', detail:'米粥做锅底涮海鲜牛肉，顺德特色', price:'¥80', delivery:false, hot:false },
+  { id:'f249', name:'猪肚鸡火锅', cat:'火锅', emoji:'🐔', detail:'猪肚包鸡+胡椒熬汤，先喝汤再涮菜', price:'¥98', delivery:false, hot:false },
+  { id:'f250', name:'冰煮羊火锅', cat:'火锅', emoji:'🐑', detail:'冰块+羊肉+红酒+酸奶煮制，内蒙古新派', price:'¥88', delivery:false, hot:false },
+  { id:'f251', name:'打边炉', cat:'火锅', emoji:'🍲', detail:'广式炭炉煲汤涮海鲜，围炉而坐', price:'¥120', delivery:false, hot:false },
+  { id:'f252', name:'东北烧烤大排档', cat:'烧烤', emoji:'🍖', detail:'羊肉串+烤茄子+蒜蓉生蚝，夏夜啤酒绝配', price:'¥65', delivery:true, hot:false },
+  { id:'f253', name:'韩式厚切五花烤肉', cat:'烧烤', emoji:'🥓', detail:'生菜包肉+蒜片辣椒+泡菜，滋滋冒油一口满足', price:'¥95', delivery:false, hot:true },
+  { id:'f254', name:'淄博小饼卷烧烤', cat:'烧烤', emoji:'🫓', detail:'灵魂三件套：小饼+蘸酱+小葱，卷着吃才正宗', price:'¥55', delivery:false, hot:true },
+  { id:'f255', name:'新疆红柳烤肉', cat:'烧烤', emoji:'🍢', detail:'红柳枝串羊肉炭烤，木香肉香交融', price:'¥8/串', delivery:false, hot:false },
+  { id:'f256', name:'日式烧鸟', cat:'烧烤', emoji:'🍢', detail:'鸡肉串烧+葱段+酱汁，居酒屋灵魂', price:'¥45', delivery:false, hot:false },
+  { id:'f257', name:'巴西烤肉', cat:'烧烤', emoji:'🥩', detail:'大块牛肉串烤现切，南美风情', price:'¥128', delivery:false, hot:false },
+  { id:'f258', name:'烤全羊', cat:'烧烤', emoji:'🐑', detail:'整只羊炭火慢烤，外焦里嫩，蒙古盛宴', price:'¥888', delivery:false, hot:false },
+  { id:'f259', name:'烤鱼', cat:'烧烤', emoji:'🐟', detail:'万州烤鱼+配菜+炭火，麻辣鲜香', price:'¥68', delivery:true, hot:false },
+  { id:'f260', name:'烤羊排', cat:'烧烤', emoji:'🍖', detail:'法式小羊排+迷迭香+蒜，外焦里嫩', price:'¥88', delivery:false, hot:false },
+  { id:'f261', name:'烤生蚝', cat:'烧烤', emoji:'🦪', detail:'蒜蓉粉丝烤生蚝，鲜嫩多汁', price:'¥12/只', delivery:true, hot:false },
+  { id:'f262', name:'烤脑花', cat:'烧烤', emoji:'🧠', detail:'猪脑+红油+花椒+葱花锡纸烤，重庆特色', price:'¥18', delivery:true, hot:false },
+  { id:'f263', name:'烤茄子', cat:'烧烤', emoji:'🍆', detail:'整条茄子烤软+蒜蓉+辣椒，素菜之王', price:'¥12', delivery:true, hot:false },
+  { id:'f264', name:'烤韭菜', cat:'烧烤', emoji:'🥬', detail:'韭菜刷油撒孜然辣椒，烧烤素菜经典', price:'¥8', delivery:true, hot:false },
+  { id:'f265', name:'烤鸡翅', cat:'烧烤', emoji:'🍗', detail:'蜜汁/麻辣/奥尔良，烧烤必点', price:'¥8/串', delivery:true, hot:false },
+  { id:'f266', name:'烤鱿鱼', cat:'烧烤', emoji:'🦑', detail:'整只鱿鱼铁板烤制刷酱，夜市人气王', price:'¥15', delivery:true, hot:false },
+  { id:'f267', name:'长沙臭豆腐', cat:'小吃', emoji:'🫘', detail:'外焦里嫩灌汤入味，闻着臭吃着香，长沙名片', price:'¥12', delivery:false, hot:true },
+  { id:'f268', name:'天津煎饼果子', cat:'小吃', emoji:'🫓', detail:'绿豆面+薄脆+鸡蛋+甜面酱，天津老味儿', price:'¥10', delivery:true, hot:false },
+  { id:'f269', name:'柳州螺蛳粉', cat:'小吃', emoji:'🍲', detail:'酸笋腐竹花生酸豆角，越臭越上头', price:'¥15', delivery:true, hot:true },
+  { id:'f270', name:'章鱼小丸子', cat:'小吃', emoji:'🐙', detail:'外酥里嫩包裹章鱼粒，木鱼花跳舞淋照烧酱', price:'¥15', delivery:true, hot:false },
+  { id:'f271', name:'盐酥鸡', cat:'小吃', emoji:'🍗', detail:'九层塔提香外酥里嫩，台式炸鸡配椒盐粉', price:'¥18', delivery:true, hot:false },
+  { id:'f272', name:'台湾卤肉饭', cat:'小吃', emoji:'🍚', detail:'五花肉丁卤至软烂酱香浓郁浇米饭，台式灵魂', price:'¥22', delivery:true, hot:false },
+  { id:'f273', name:'烤冷面', cat:'小吃', emoji:'🫓', detail:'铁板冷面+鸡蛋+火腿+甜辣酱，街头小吃之王', price:'¥8', delivery:false, hot:false },
+  { id:'f274', name:'肉夹馍', cat:'小吃', emoji:'🥙', detail:'白吉馍夹腊汁肉，馍酥肉烂，西安灵魂', price:'¥15', delivery:true, hot:false },
+  { id:'f275', name:'凉皮', cat:'小吃', emoji:'🍝', detail:'米皮+面筋+黄瓜丝+红油醋汁，夏日消暑', price:'¥12', delivery:true, hot:false },
+  { id:'f276', name:'鸡蛋灌饼', cat:'小吃', emoji:'🫓', detail:'面饼灌入蛋液煎至金黄，配生菜火腿', price:'¥8', delivery:true, hot:false },
+  { id:'f277', name:'手抓饼', cat:'小吃', emoji:'🫓', detail:'千层酥皮+鸡蛋+培根+生菜，街头爆款', price:'¥10', delivery:true, hot:false },
+  { id:'f278', name:'关东煮', cat:'小吃', emoji:'🍢', detail:'昆布柴鱼汤煮鱼丸萝卜豆腐，冬日暖身', price:'¥15', delivery:true, hot:false },
+  { id:'f279', name:'麻辣烫', cat:'小吃', emoji:'🥘', detail:'自选食材骨汤/麻辣汤底，丰俭由人', price:'¥25', delivery:true, hot:false },
+  { id:'f280', name:'酸辣粉', cat:'小吃', emoji:'🍜', detail:'红薯粉+醋+辣椒+花生+榨菜，重庆名小吃', price:'¥12', delivery:true, hot:false },
+  { id:'f281', name:'桂林米粉', cat:'小吃', emoji:'🍜', detail:'卤水+锅烧+花生+酸豆角，桂林灵魂', price:'¥15', delivery:true, hot:false },
+  { id:'f282', name:'生煎包', cat:'小吃', emoji:'🥟', detail:'底部焦脆肉馅多汁，上海名点', price:'¥16', delivery:true, hot:false },
+  { id:'f283', name:'小笼包', cat:'小吃', emoji:'🥟', detail:'皮薄馅大汤汁丰盈，先开窗后喝汤', price:'¥18', delivery:true, hot:false },
+  { id:'f284', name:'锅贴', cat:'小吃', emoji:'🥟', detail:'底部焦脆馅料鲜美，煎饺升级版', price:'¥15', delivery:true, hot:false },
+  { id:'f285', name:'春卷', cat:'小吃', emoji:'🫔', detail:'薄皮包豆芽肉丝炸至金黄，酥脆鲜香', price:'¥12', delivery:true, hot:false },
+  { id:'f286', name:'烧麦', cat:'小吃', emoji:'🥟', detail:'薄皮包糯米+肉丁+香菇，顶部开花', price:'¥12', delivery:true, hot:false },
+  { id:'f287', name:'粽子', cat:'小吃', emoji:'🫔', detail:'糯米+鲜肉/蛋黄/豆沙，端午必备', price:'¥8', delivery:true, hot:false },
+  { id:'f288', name:'汤圆', cat:'小吃', emoji:'🍡', detail:'糯米皮包黑芝麻/花生馅，元宵必备', price:'¥10', delivery:true, hot:false },
+  { id:'f289', name:'馄饨', cat:'小吃', emoji:'🥟', detail:'薄皮包鲜肉馅+紫菜虾皮汤，暖心暖胃', price:'¥12', delivery:true, hot:false },
+  { id:'f290', name:'炸鸡排', cat:'小吃', emoji:'🍗', detail:'鸡胸肉锤薄裹粉油炸，比脸还大', price:'¥15', delivery:true, hot:false },
+  { id:'f291', name:'狼牙土豆', cat:'小吃', emoji:'🍟', detail:'波浪土豆条油炸+辣椒+折耳根，四川街头', price:'¥8', delivery:true, hot:false },
+  { id:'f292', name:'铁板豆腐', cat:'小吃', emoji:'🫘', detail:'嫩豆腐铁板煎至金黄刷酱，夜市经典', price:'¥8', delivery:true, hot:false },
+  { id:'f293', name:'烤红薯', cat:'小吃', emoji:'🍠', detail:'炭火烤制流蜜糖心，冬日暖手宝', price:'¥8', delivery:true, hot:false },
+  { id:'f294', name:'炒酸奶', cat:'小吃', emoji:'🍦', detail:'酸奶+水果+坚果铁板炒制，夏日消暑', price:'¥15', delivery:true, hot:false },
+  { id:'f295', name:'鸡蛋仔', cat:'小吃', emoji:'🧇', detail:'香港街头鸡蛋仔，外脆里软蛋香浓郁', price:'¥12', delivery:true, hot:false },
+  { id:'f296', name:'车轮饼', cat:'小吃', emoji:'🥮', detail:'红豆/奶油/芋泥馅车轮形小饼，台湾小吃', price:'¥8', delivery:true, hot:false },
+  { id:'f297', name:'糖炒栗子', cat:'小吃', emoji:'🌰', detail:'砂石+糖炒制板栗，香甜软糯秋冬限定', price:'¥18', delivery:true, hot:false },
+  { id:'f298', name:'炸串', cat:'小吃', emoji:'🍢', detail:'各种食材串炸刷酱，校门口记忆', price:'¥15', delivery:true, hot:false },
+  { id:'f299', name:'烤面筋', cat:'小吃', emoji:'🍢', detail:'面筋串烤制刷酱撒孜然，夜市人气', price:'¥5', delivery:true, hot:false },
+  { id:'f300', name:'铁板鱿鱼', cat:'小吃', emoji:'🦑', detail:'整只鱿鱼铁板烤制刷酱，夜市人气王', price:'¥15', delivery:true, hot:false },
+  { id:'f301', name:'花甲粉', cat:'小吃', emoji:'🍜', detail:'花甲+粉丝+蒜蓉+辣椒锡纸烤，鲜辣过瘾', price:'¥18', delivery:true, hot:false },
+  { id:'f302', name:'烤猪蹄', cat:'小吃', emoji:'🍖', detail:'猪蹄先卤后烤，外焦里糯胶原蛋白', price:'¥22', delivery:true, hot:false },
+  { id:'f303', name:'炸鸡架', cat:'小吃', emoji:'🍗', detail:'鸡架腌制油炸撒调料，沈阳夜宵之王', price:'¥12', delivery:true, hot:false },
+  { id:'f304', name:'酱香饼', cat:'小吃', emoji:'🫓', detail:'千层饼刷酱撒芝麻葱花，土家风味', price:'¥8', delivery:true, hot:false },
+  { id:'f305', name:'肉松小贝', cat:'小吃', emoji:'🍰', detail:'蛋糕+沙拉酱+肉松，鲍师傅爆款', price:'¥18', delivery:true, hot:false },
+  { id:'f306', name:'脆皮五花肉', cat:'小吃', emoji:'🥓', detail:'五花肉烤至皮脆肉嫩，夜市之王', price:'¥28', delivery:true, hot:true },
+  { id:'f307', name:'麦当劳巨无霸套餐', cat:'快餐', emoji:'🍔', detail:'双层牛肉+芝士+生菜+酸黄瓜，经典美式风味', price:'¥39', delivery:true, hot:false },
+  { id:'f308', name:'肯德基吮指原味鸡', cat:'快餐', emoji:'🍗', detail:'11种香料秘制，外酥里嫩，吮指回味无穷', price:'¥12.5', delivery:true, hot:false },
+  { id:'f309', name:'吉野家牛肉饭', cat:'快餐', emoji:'🍱', detail:'日式肥牛饭配味噌汤和小菜，打工人午餐首选', price:'¥35', delivery:true, hot:false },
+  { id:'f310', name:'沙县小吃拌面扁肉', cat:'快餐', emoji:'🍜', detail:'花生酱拌面配鲜肉扁食，国民套餐经济实惠', price:'¥15', delivery:true, hot:false },
+  { id:'f311', name:'黄焖鸡米饭', cat:'快餐', emoji:'🍛', detail:'鲜嫩鸡腿肉+秘制酱汁+土豆青椒，米饭杀手', price:'¥22', delivery:true, hot:false },
+  { id:'f312', name:'杨国福麻辣烫', cat:'快餐', emoji:'🥘', detail:'骨汤麻辣烫自选食材称重计价，丰俭由人', price:'¥28', delivery:true, hot:false },
+  { id:'f313', name:'塔斯汀中国汉堡', cat:'快餐', emoji:'🍔', detail:'手工现擀面胚+中式内馅，北京烤鸭/麻婆豆腐汉堡', price:'¥25', delivery:true, hot:true },
+  { id:'f314', name:'老乡鸡小炒肉套餐', cat:'快餐', emoji:'🍱', detail:'小炒肉+番茄炒蛋+米饭，中式快餐之王现炒现送', price:'¥28', delivery:true, hot:true },
+  { id:'f315', name:'赛百味三明治', cat:'快餐', emoji:'🥪', detail:'自选面包+肉类+蔬菜+酱料，健康快餐', price:'¥30', delivery:true, hot:false },
+  { id:'f316', name:'汉堡王皇堡', cat:'快餐', emoji:'🍔', detail:'火烤牛肉饼+新鲜蔬菜，真正火烤的汉堡', price:'¥35', delivery:true, hot:false },
+  { id:'f317', name:'德克士脆皮炸鸡', cat:'快餐', emoji:'🍗', detail:'脆皮炸鸡+手枪腿，本土炸鸡品牌', price:'¥28', delivery:true, hot:false },
+  { id:'f318', name:'华莱士全鸡汉堡', cat:'快餐', emoji:'🍔', detail:'性价比之王，10元吃饱', price:'¥18', delivery:true, hot:false },
+  { id:'f319', name:'真功夫排骨饭', cat:'快餐', emoji:'🍱', detail:'原盅蒸饭+排骨/鸡肉，中式蒸品快餐', price:'¥28', delivery:true, hot:false },
+  { id:'f320', name:'永和大王豆浆油条', cat:'快餐', emoji:'🥖', detail:'现磨豆浆+现炸油条，中式早餐经典', price:'¥12', delivery:true, hot:false },
+  { id:'f321', name:'必胜客披萨', cat:'快餐', emoji:'🍕', detail:'铁盘/薄底披萨，榴莲/超级至尊经典', price:'¥69', delivery:true, hot:false },
+  { id:'f322', name:'达美乐薯泥披萨', cat:'快餐', emoji:'🍕', detail:'土豆培根+红薯泥卷边，30分钟必达', price:'¥69', delivery:true, hot:false },
+  { id:'f323', name:'萨莉亚肉酱意面', cat:'快餐', emoji:'🍝', detail:'性价比之王，肉酱浓郁，面包无限续', price:'¥18', delivery:true, hot:false },
+  { id:'f324', name:'乡村基', cat:'快餐', emoji:'🍱', detail:'川味快餐，现炒现送，重庆起家', price:'¥22', delivery:true, hot:false },
+  { id:'f325', name:'大米先生', cat:'快餐', emoji:'🍱', detail:'现炒快餐称重计价，菜品丰富', price:'¥25', delivery:true, hot:false },
+  { id:'f326', name:'和府捞面', cat:'快餐', emoji:'🍜', detail:'书房里的捞面，草本汤+劲道面条', price:'¥35', delivery:true, hot:false },
+  { id:'f327', name:'日式豚骨拉面', cat:'日韩', emoji:'🍜', detail:'浓郁豚骨白汤+叉烧溏心蛋+劲道面条，一口入魂', price:'¥38', delivery:true, hot:false },
+  { id:'f328', name:'寿司拼盘', cat:'日韩', emoji:'🍣', detail:'三文鱼金枪鱼甜虾北极贝，新鲜刺身+醋饭', price:'¥88', delivery:true, hot:false },
+  { id:'f329', name:'天妇罗定食', cat:'日韩', emoji:'🍤', detail:'大虾蔬菜薄衣炸至金黄酥脆，蘸天汁配米饭', price:'¥55', delivery:false, hot:false },
+  { id:'f330', name:'鳗鱼饭', cat:'日韩', emoji:'🍱', detail:'蒲烧鳗鱼+米饭+山椒粉，日式奢华便当', price:'¥78', delivery:true, hot:false },
+  { id:'f331', name:'日式炸猪排', cat:'日韩', emoji:'🍖', detail:'厚切猪里脊裹面包糠油炸，外酥里嫩配卷心菜丝', price:'¥42', delivery:true, hot:false },
+  { id:'f332', name:'亲子丼', cat:'日韩', emoji:'🍚', detail:'鸡肉+鸡蛋+洋葱盖饭，日式家常经典', price:'¥28', delivery:true, hot:false },
+  { id:'f333', name:'牛肉盖饭', cat:'日韩', emoji:'🍚', detail:'肥牛+洋葱+甜酱油盖饭，吉野家经典', price:'¥30', delivery:true, hot:false },
+  { id:'f334', name:'蛋包饭', cat:'日韩', emoji:'🍚', detail:'蛋皮包裹番茄炒饭淋番茄酱，日式洋食', price:'¥25', delivery:true, hot:false },
+  { id:'f335', name:'关东煮', cat:'日韩', emoji:'🍢', detail:'昆布柴鱼汤煮萝卜鸡蛋鱼丸竹轮，冬日暖身', price:'¥20', delivery:true, hot:false },
+  { id:'f336', name:'章鱼烧', cat:'日韩', emoji:'🐙', detail:'面糊+章鱼粒烤制，外酥里嫩淋照烧酱', price:'¥15', delivery:true, hot:false },
+  { id:'f337', name:'大阪烧', cat:'日韩', emoji:'🥞', detail:'面糊+卷心菜+猪肉+海鲜铁板煎制，关西名物', price:'¥32', delivery:false, hot:false },
+  { id:'f338', name:'日式咖喱饭', cat:'日韩', emoji:'🍛', detail:'咖喱+土豆+胡萝卜+鸡肉，日式国民美食', price:'¥28', delivery:true, hot:false },
+  { id:'f339', name:'味噌拉面', cat:'日韩', emoji:'🍜', detail:'味噌汤底+叉烧+玉米+黄油，北海道风味', price:'¥35', delivery:true, hot:false },
+  { id:'f340', name:'刺身拼盘', cat:'日韩', emoji:'🐟', detail:'三文鱼+金枪鱼+甜虾+北极贝，新鲜直送', price:'¥128', delivery:false, hot:false },
+  { id:'f341', name:'茶碗蒸', cat:'日韩', emoji:'🥚', detail:'鸡蛋+虾仁+香菇+银杏蒸制，日式蒸蛋', price:'¥18', delivery:true, hot:false },
+  { id:'f342', name:'韩式石锅拌饭', cat:'日韩', emoji:'🥘', detail:'时蔬+肉末+溏心蛋+辣酱，石锅滋滋作响锅巴焦香', price:'¥32', delivery:true, hot:false },
+  { id:'f343', name:'韩式炸鸡', cat:'日韩', emoji:'🍗', detail:'双重油炸锁住肉汁，裹甜辣酱或原味配啤酒', price:'¥45', delivery:true, hot:true },
+  { id:'f344', name:'韩式辣炒年糕', cat:'日韩', emoji:'🫕', detail:'Q弹年糕+鱼饼+辣酱，甜辣软糯街头人气王', price:'¥22', delivery:true, hot:false },
+  { id:'f345', name:'韩式烤肉', cat:'日韩', emoji:'🥩', detail:'五花肉/牛肋条炭火烤制，生菜包肉+蒜片+泡菜', price:'¥95', delivery:false, hot:false },
+  { id:'f346', name:'韩式冷面', cat:'日韩', emoji:'🍜', detail:'荞麦面+冰镇酸甜汤+泡菜+鸡蛋+梨片，夏日消暑', price:'¥25', delivery:true, hot:false },
+  { id:'f347', name:'大酱汤', cat:'日韩', emoji:'🍲', detail:'韩式大酱+豆腐+西葫芦+蛤蜊，韩国国民汤', price:'¥22', delivery:true, hot:false },
+  { id:'f348', name:'泡菜汤', cat:'日韩', emoji:'🍲', detail:'泡菜+猪肉+豆腐炖煮，酸辣开胃', price:'¥22', delivery:true, hot:false },
+  { id:'f349', name:'参鸡汤', cat:'日韩', emoji:'🐔', detail:'整只童子鸡+糯米+人参+红枣炖制，滋补养生', price:'¥58', delivery:true, hot:false },
+  { id:'f350', name:'紫菜包饭', cat:'日韩', emoji:'🍙', detail:'紫菜+米饭+火腿+鸡蛋+黄瓜+胡萝卜，韩式寿司', price:'¥15', delivery:true, hot:false },
+  { id:'f351', name:'韩式炸酱面', cat:'日韩', emoji:'🍜', detail:'黑豆酱+猪肉+洋葱炒制浇面，韩式中餐', price:'¥25', delivery:true, hot:false },
+  { id:'f352', name:'泡菜饼', cat:'日韩', emoji:'🥞', detail:'泡菜+面粉+鸡蛋煎制，外酥里嫩', price:'¥18', delivery:true, hot:false },
+  { id:'f353', name:'韩式海鲜煎饼', cat:'日韩', emoji:'🥞', detail:'葱+鱿鱼+虾仁+面糊煎制，蘸酱油醋', price:'¥28', delivery:true, hot:false },
+  { id:'f354', name:'韩式炒杂菜', cat:'日韩', emoji:'🥗', detail:'粉条+菠菜+胡萝卜+牛肉丝+酱油炒制', price:'¥25', delivery:true, hot:false },
+  { id:'f355', name:'日式照烧鸡腿', cat:'日韩', emoji:'🍗', detail:'鸡腿+照烧酱煎制，甜咸入味肉质嫩滑', price:'¥32', delivery:true, hot:false },
+  { id:'f356', name:'日式寿喜烧', cat:'日韩', emoji:'🍲', detail:'甜酱油涮牛肉蘸生蛋液，关西风火锅', price:'¥120', delivery:false, hot:false },
+  { id:'f357', name:'冬阴功汤', cat:'东南亚', emoji:'🥣', detail:'香茅柠檬叶南姜+大虾，酸辣鲜香层次炸裂', price:'¥42', delivery:true, hot:true },
+  { id:'f358', name:'越南牛肉河粉', cat:'东南亚', emoji:'🍜', detail:'牛骨清汤+薄切牛肉+九层塔青柠，清淡鲜美', price:'¥32', delivery:true, hot:false },
+  { id:'f359', name:'泰式咖喱虾', cat:'东南亚', emoji:'🦐', detail:'浓郁椰浆咖喱裹满大虾，配香米饭停不下来', price:'¥58', delivery:true, hot:false },
+  { id:'f360', name:'海南鸡饭', cat:'东南亚', emoji:'🐔', detail:'滑嫩白斩鸡+鸡油饭+三色蘸酱，新加坡国民美食', price:'¥35', delivery:true, hot:false },
+  { id:'f361', name:'泰式芒果糯米饭', cat:'东南亚', emoji:'🥭', detail:'香甜芒果+椰浆糯米+脆绿豆，热带风情甜品', price:'¥28', delivery:true, hot:true },
+  { id:'f362', name:'越南春卷', cat:'东南亚', emoji:'🫔', detail:'米纸包裹虾肉米粉生菜，蘸鱼露清爽无敌', price:'¥18', delivery:true, hot:false },
+  { id:'f363', name:'泰式打抛猪肉饭', cat:'东南亚', emoji:'🍚', detail:'罗勒爆炒猪肉末+太阳蛋，锅气十足', price:'¥28', delivery:true, hot:false },
+  { id:'f364', name:'印尼炒饭', cat:'东南亚', emoji:'🍚', detail:'甜酱油+咖喱粉炒饭+虾饼+荷包蛋，国民美食', price:'¥25', delivery:true, hot:false },
+  { id:'f365', name:'马来西亚叻沙', cat:'东南亚', emoji:'🍜', detail:'椰奶+虾米熬红汤，辛辣浓郁配豆腐和虾', price:'¥32', delivery:true, hot:false },
+  { id:'f366', name:'新加坡辣椒蟹', cat:'东南亚', emoji:'🦀', detail:'鲜嫩螃蟹裹浓稠番茄辣酱，配馒头蘸酱', price:'¥168', delivery:false, hot:false },
+  { id:'f367', name:'沙嗲肉串', cat:'东南亚', emoji:'🍢', detail:'炭烤鸡肉串配花生酱和腌黄瓜，一口入魂', price:'¥28', delivery:true, hot:false },
+  { id:'f368', name:'泰式绿咖喱鸡', cat:'东南亚', emoji:'🍛', detail:'椰奶+青咖喱熬制浓郁酱汁，微辣带甜', price:'¥35', delivery:true, hot:false },
+  { id:'f369', name:'越南法棍三明治', cat:'东南亚', emoji:'🥖', detail:'法式面包夹越式馅料，融合感满分', price:'¥18', delivery:true, hot:false },
+  { id:'f370', name:'印尼仁当牛肉', cat:'东南亚', emoji:'🥩', detail:'牛肉+椰奶+十几种香料慢炖2-3小时，世界级美味', price:'¥58', delivery:true, hot:false },
+  { id:'f371', name:'泰式猪脚饭', cat:'东南亚', emoji:'🍚', detail:'猪脚卤至软烂脱骨淋卤汁配酸菜，曼谷米其林', price:'¥28', delivery:true, hot:false },
+  { id:'f372', name:'马来西亚椰浆饭', cat:'东南亚', emoji:'🍚', detail:'椰浆煮饭+炸花生+小鱼仔+水煮蛋+参巴辣酱', price:'¥22', delivery:true, hot:false },
+  { id:'f373', name:'老挝肉末沙拉', cat:'东南亚', emoji:'🥗', detail:'肉末+鱼露+柠檬汁+辣椒+薄荷，酸辣开胃', price:'¥25', delivery:true, hot:false },
+  { id:'f374', name:'新加坡黑胡椒蟹', cat:'东南亚', emoji:'🦀', detail:'黄油炒香黑胡椒+蒜末+洋葱，蟹肉鲜甜辛辣刺激', price:'¥188', delivery:false, hot:false },
+  { id:'f375', name:'泰式青木瓜沙拉', cat:'东南亚', emoji:'🥗', detail:'青木瓜丝+鱼露+柠檬+辣椒+花生，酸辣爽脆', price:'¥18', delivery:true, hot:false },
+  { id:'f376', name:'菲律宾烤乳猪', cat:'东南亚', emoji:'🐷', detail:'整只乳猪炭火烤制皮脆肉嫩，菲律宾国菜', price:'¥188', delivery:false, hot:false },
+  { id:'f377', name:'缅甸茶叶沙拉', cat:'东南亚', emoji:'🥗', detail:'发酵茶叶+花生+蚕豆+芝麻+番茄，独特风味', price:'¥22', delivery:true, hot:false },
+  { id:'f378', name:'柬埔寨阿莫克鱼', cat:'东南亚', emoji:'🐟', detail:'鱼肉+椰奶+高棉咖喱酱香蕉叶蒸制', price:'¥48', delivery:false, hot:false },
+  { id:'f379', name:'印尼加多加多', cat:'东南亚', emoji:'🥗', detail:'水煮蔬菜+花生酱+虾片，印尼国民沙拉', price:'¥22', delivery:true, hot:false },
+  { id:'f380', name:'泰式菠萝炒饭', cat:'东南亚', emoji:'🍍', detail:'菠萝+虾仁+腰果+肉松+咖喱粉炒饭，热带风情', price:'¥32', delivery:true, hot:false },
+  { id:'f381', name:'越南滴漏咖啡', cat:'东南亚', emoji:'☕', detail:'越南咖啡+炼乳+冰块，浓郁香甜', price:'¥15', delivery:true, hot:false },
+  { id:'f382', name:'果木烤厚切肋眼牛排', cat:'西餐', emoji:'🥩', detail:'澳洲和牛肋眼果木碳烤，配黑松露薯条', price:'¥238', delivery:false, hot:false },
+  { id:'f383', name:'菲力牛排', cat:'西餐', emoji:'🥩', detail:'牛里脊最嫩部位，口感细腻三分熟最佳', price:'¥188', delivery:false, hot:false },
+  { id:'f384', name:'西冷牛排', cat:'西餐', emoji:'🥩', detail:'牛外脊肉质鲜嫩带脂肪，风味浓郁', price:'¥158', delivery:false, hot:false },
+  { id:'f385', name:'T骨牛排', cat:'西餐', emoji:'🥩', detail:'包含西冷和菲力，一牛两味', price:'¥198', delivery:false, hot:false },
+  { id:'f386', name:'法式鹅肝', cat:'西餐', emoji:'🦆', detail:'香煎鹅肝配无花果酱+烤面包，入口即化', price:'¥168', delivery:false, hot:false },
+  { id:'f387', name:'法式焗蜗牛', cat:'西餐', emoji:'🐌', detail:'蜗牛+蒜蓉黄油+欧芹焗制，法餐经典', price:'¥88', delivery:false, hot:false },
+  { id:'f388', name:'意大利肉酱面', cat:'西餐', emoji:'🍝', detail:'番茄+牛肉末+洋葱胡萝卜慢炖，经典意面', price:'¥35', delivery:true, hot:false },
+  { id:'f389', name:'奶油培根意面', cat:'西餐', emoji:'🍝', detail:'鸡蛋+帕玛森芝士+培根+黑胡椒，罗马经典', price:'¥32', delivery:true, hot:false },
+  { id:'f390', name:'海鲜意大利面', cat:'西餐', emoji:'🍝', detail:'虾+青口+鱿鱼+番茄酱/白酒奶油酱', price:'¥48', delivery:true, hot:false },
+  { id:'f391', name:'玛格丽特披萨', cat:'西餐', emoji:'🍕', detail:'番茄酱+马苏里拉芝士+罗勒，意式经典', price:'¥48', delivery:true, hot:false },
+  { id:'f392', name:'提拉米苏', cat:'西餐', emoji:'🍰', detail:'手指饼干浸咖啡酒+马斯卡彭芝士+可可粉', price:'¥32', delivery:true, hot:false },
+  { id:'f393', name:'凯撒沙拉', cat:'西餐', emoji:'🥗', detail:'罗马生菜+凯撒酱+帕玛森芝士+烤面包丁', price:'¥28', delivery:true, hot:false },
+  { id:'f394', name:'法式洋葱汤', cat:'西餐', emoji:'🍲', detail:'慢火熬煮洋葱汤+格鲁耶尔芝士+烤面包', price:'¥32', delivery:false, hot:false },
+  { id:'f395', name:'罗宋汤', cat:'西餐', emoji:'🍲', detail:'甜菜根+牛肉+卷心菜+酸奶油，俄式经典', price:'¥22', delivery:true, hot:false },
+  { id:'f396', name:'奶油蘑菇汤', cat:'西餐', emoji:'🍲', detail:'蘑菇+奶油+黄油熬制，浓郁丝滑', price:'¥22', delivery:true, hot:false },
+  { id:'f397', name:'香煎三文鱼', cat:'西餐', emoji:'🐟', detail:'三文鱼排煎至外酥里嫩，配柠檬黄油酱', price:'¥68', delivery:true, hot:false },
+  { id:'f398', name:'法式红酒烩鸡', cat:'西餐', emoji:'🐔', detail:'鸡肉+红酒+蘑菇+洋葱慢炖，醇厚入味', price:'¥58', delivery:false, hot:false },
+  { id:'f399', name:'威灵顿牛排', cat:'西餐', emoji:'🥩', detail:'牛柳+蘑菇酱+火腿+酥皮包裹烤制', price:'¥288', delivery:false, hot:false },
+  { id:'f400', name:'烤羊排', cat:'西餐', emoji:'🍖', detail:'法式小羊排+迷迭香+蒜，外焦里嫩', price:'¥128', delivery:false, hot:false },
+  { id:'f401', name:'西班牙海鲜饭', cat:'西餐', emoji:'🥘', detail:'藏红花+米饭+虾+青口+鱿鱼+鸡肉，巴塞罗那名菜', price:'¥128', delivery:false, hot:false },
+  { id:'f402', name:'墨西哥鸡肉卷', cat:'西餐', emoji:'🌯', detail:'鸡肉+生菜+番茄+奶酪+酸奶油，墨式经典', price:'¥25', delivery:true, hot:false },
+  { id:'f403', name:'美式汉堡', cat:'西餐', emoji:'🍔', detail:'牛肉饼+芝士+生菜+番茄+酸黄瓜，经典美式', price:'¥35', delivery:true, hot:false },
+  { id:'f404', name:'炸鱼薯条', cat:'西餐', emoji:'🐟', detail:'鳕鱼裹啤酒面糊油炸+粗薯条，英式经典', price:'¥38', delivery:true, hot:false },
+  { id:'f405', name:'千层面', cat:'西餐', emoji:'🍝', detail:'意式肉酱+白酱+芝士层层叠叠烤制', price:'¥42', delivery:true, hot:false },
+  { id:'f406', name:'意大利烩饭', cat:'西餐', emoji:'🍚', detail:'Arborio米+蘑菇/海鲜+帕玛森芝士慢炖', price:'¥48', delivery:false, hot:false },
+  { id:'f407', name:'焦糖布丁', cat:'西餐', emoji:'🍮', detail:'嫩滑卡仕达酱+焦糖脆壳，法式经典', price:'¥22', delivery:true, hot:false },
+  { id:'f408', name:'巧克力熔岩蛋糕', cat:'西餐', emoji:'🍰', detail:'温热巧克力蛋糕切开流心，配香草冰淇淋', price:'¥35', delivery:true, hot:false },
+  { id:'f409', name:'苹果派', cat:'西餐', emoji:'🥧', detail:'酥脆派皮+香甜苹果馅，配香草冰淇淋', price:'¥25', delivery:true, hot:false },
+  { id:'f410', name:'班尼迪克蛋', cat:'西餐', emoji:'🥚', detail:'英式松饼+水波蛋+火腿+荷兰酱，早午餐经典', price:'¥38', delivery:true, hot:false },
+  { id:'f411', name:'德国猪肘', cat:'西餐', emoji:'🍖', detail:'脆皮烤猪肘+酸菜+土豆泥，慕尼黑啤酒节必备', price:'¥88', delivery:false, hot:false },
+  { id:'f412', name:'鲜芋仙招牌芋圆', cat:'甜品', emoji:'🍧', detail:'Q弹芋圆+红豆+珍珠+仙草炼乳冰沙，夏日消暑', price:'¥28', delivery:true, hot:false },
+  { id:'f413', name:'Lady M千层蛋糕', cat:'甜品', emoji:'🍰', detail:'20层手工薄饼+细腻奶油，抹茶原味经典之选', price:'¥75', delivery:true, hot:true },
+  { id:'f414', name:'茅台冰淇淋', cat:'甜品', emoji:'🍦', detail:'含53度飞天茅台，酱香型冰淇淋，吃完不能开车', price:'¥66', delivery:false, hot:true },
+  { id:'f415', name:'奶皮子糖葫芦', cat:'甜品', emoji:'🍡', detail:'糖葫芦pro版，山楂裹奶皮子糖衣，酥脆拉丝抖音爆款', price:'¥35', delivery:false, hot:true },
+  { id:'f416', name:'黄油年糕', cat:'甜品', emoji:'🧈', detail:'黄油+糯米年糕烤制，外脆里糯奶香四溢，2025烘焙顶流', price:'¥18', delivery:true, hot:true },
+  { id:'f417', name:'提拉米苏', cat:'甜品', emoji:'🍰', detail:'手指饼干浸咖啡酒+马斯卡彭芝士+可可粉', price:'¥32', delivery:true, hot:false },
+  { id:'f418', name:'芒果班戟', cat:'甜品', emoji:'🥭', detail:'薄饼皮+奶油+芒果，港式甜品经典', price:'¥22', delivery:true, hot:false },
+  { id:'f419', name:'榴莲千层', cat:'甜品', emoji:'🍰', detail:'榴莲果肉+奶油+薄饼层层叠叠，榴莲控最爱', price:'¥38', delivery:true, hot:false },
+  { id:'f420', name:'冰淇淋', cat:'甜品', emoji:'🍦', detail:'香草/巧克力/草莓/抹茶，夏日必备', price:'¥15', delivery:true, hot:false },
+  { id:'f421', name:'雪花冰', cat:'甜品', emoji:'🍧', detail:'牛奶冰刨成雪花状+水果+炼乳，韩式甜品', price:'¥32', delivery:true, hot:false },
+  { id:'f422', name:'舒芙蕾', cat:'甜品', emoji:'🥞', detail:'云朵般松软的法式蛋奶酥，趁热吃', price:'¥38', delivery:false, hot:false },
+  { id:'f423', name:'马卡龙', cat:'甜品', emoji:'🍬', detail:'杏仁蛋白饼+夹心，法式精致甜点', price:'¥18/个', delivery:true, hot:false },
+  { id:'f424', name:'芝士蛋糕', cat:'甜品', emoji:'🍰', detail:'纽约重芝士/日式轻芝士，浓郁绵密', price:'¥28', delivery:true, hot:false },
+  { id:'f425', name:'黑森林蛋糕', cat:'甜品', emoji:'🍰', detail:'巧克力蛋糕+樱桃+奶油，德国经典', price:'¥28', delivery:true, hot:false },
+  { id:'f426', name:'红丝绒蛋糕', cat:'甜品', emoji:'🍰', detail:'红色天鹅绒蛋糕+奶油芝士霜，美式经典', price:'¥32', delivery:true, hot:false },
+  { id:'f427', name:'蛋挞', cat:'甜品', emoji:'🥧', detail:'酥皮+蛋奶液烤制，葡式/港式各有千秋', price:'¥8', delivery:true, hot:false },
+  { id:'f428', name:'泡芙', cat:'甜品', emoji:'🍩', detail:'酥皮+奶油/卡仕达酱，一口爆浆', price:'¥12', delivery:true, hot:false },
+  { id:'f429', name:'甜甜圈', cat:'甜品', emoji:'🍩', detail:'油炸面团+糖霜/巧克力，美式经典', price:'¥10', delivery:true, hot:false },
+  { id:'f430', name:'华夫饼', cat:'甜品', emoji:'🧇', detail:'格子饼+奶油+水果+枫糖浆，比利时经典', price:'¥25', delivery:true, hot:false },
+  { id:'f431', name:'可丽饼', cat:'甜品', emoji:'🥞', detail:'法式薄饼+奶油+水果+巧克力酱', price:'¥22', delivery:true, hot:false },
+  { id:'f432', name:'双皮奶', cat:'甜品', emoji:'🥛', detail:'顺德水牛奶双层奶皮，红豆芒果随心搭配', price:'¥16', delivery:true, hot:false },
+  { id:'f433', name:'姜撞奶', cat:'甜品', emoji:'🥛', detail:'姜汁+热牛奶凝固，香滑微辣，广东甜品', price:'¥15', delivery:true, hot:false },
+  { id:'f434', name:'烧仙草', cat:'甜品', emoji:'🍧', detail:'仙草冻+芋圆+红豆+花生+炼乳，台式消暑', price:'¥18', delivery:true, hot:false },
+  { id:'f435', name:'清补凉', cat:'甜品', emoji:'🥥', detail:'椰奶+绿豆+薏米+芋头+西瓜，海南消暑圣品', price:'¥15', delivery:true, hot:false },
+  { id:'f436', name:'杏仁豆腐', cat:'甜品', emoji:'🍮', detail:'杏仁+牛奶+琼脂凝固，清甜嫩滑', price:'¥12', delivery:true, hot:false },
+  { id:'f437', name:'珍珠奶茶', cat:'饮品', emoji:'🧋', detail:'Q弹珍珠+奶茶，台湾之光全球风靡', price:'¥15', delivery:true, hot:false },
+  { id:'f438', name:'杨枝甘露', cat:'饮品', emoji:'🥭', detail:'芒果+西柚+西米+椰浆，港式经典饮品', price:'¥22', delivery:true, hot:false },
+  { id:'f439', name:'水果茶', cat:'饮品', emoji:'🍹', detail:'新鲜水果+茶底，清爽解渴', price:'¥18', delivery:true, hot:false },
+  { id:'f440', name:'冰美式', cat:'饮品', emoji:'☕', detail:'浓缩咖啡+冰水，提神醒脑', price:'¥15', delivery:true, hot:false },
+  { id:'f441', name:'拿铁', cat:'饮品', emoji:'☕', detail:'浓缩咖啡+蒸汽牛奶，丝滑香醇', price:'¥22', delivery:true, hot:false },
+  { id:'f442', name:'抹茶拿铁', cat:'饮品', emoji:'🍵', detail:'抹茶+牛奶，日式清新', price:'¥25', delivery:true, hot:false },
+  { id:'f443', name:'椰子水', cat:'饮品', emoji:'🥥', detail:'天然椰子水，清甜解渴', price:'¥12', delivery:true, hot:false },
+  { id:'f444', name:'酸梅汤', cat:'饮品', emoji:'🥤', detail:'乌梅+山楂+桂花+冰糖熬制，消暑解腻', price:'¥8', delivery:true, hot:false },
+  { id:'f445', name:'柠檬茶', cat:'饮品', emoji:'🍋', detail:'柠檬+红茶+糖，港式经典冻饮', price:'¥12', delivery:true, hot:false },
+  { id:'f446', name:'烧仙草奶茶', cat:'饮品', emoji:'🧋', detail:'仙草冻+奶茶+珍珠+椰果，料多满足', price:'¥18', delivery:true, hot:false },
+  { id:'f447', name:'生椰拿铁', cat:'饮品', emoji:'☕', detail:'椰乳+浓缩咖啡，瑞幸爆款', price:'¥18', delivery:true, hot:false },
+  { id:'f448', name:'霸气橙子', cat:'饮品', emoji:'🍊', detail:'整颗橙子+茉莉绿茶，奈雪经典', price:'¥22', delivery:true, hot:false },
+  { id:'f449', name:'多肉葡萄', cat:'饮品', emoji:'🍇', detail:'葡萄果肉+芝士奶盖+绿茶，喜茶招牌', price:'¥28', delivery:true, hot:false },
+  { id:'f450', name:'豆乳奶茶', cat:'饮品', emoji:'🧋', detail:'豆乳奶盖+奶茶+芋圆，SEVENBUS爆款', price:'¥22', delivery:true, hot:false },
+  { id:'f451', name:'手打柠檬茶', cat:'饮品', emoji:'🍋', detail:'香水柠檬+冰块暴打+茶底，清爽解腻', price:'¥16', delivery:true, hot:false },
+  { id:'f452', name:'豆浆油条', cat:'早餐', emoji:'🥖', detail:'现磨豆浆+现炸油条，中式早餐经典CP', price:'¥8', delivery:true, hot:false },
+  { id:'f453', name:'小笼包', cat:'早餐', emoji:'🥟', detail:'皮薄馅大汤汁丰盈，先开窗后喝汤', price:'¥18', delivery:true, hot:false },
+  { id:'f454', name:'煎饼果子', cat:'早餐', emoji:'🫓', detail:'绿豆面+薄脆+鸡蛋+甜面酱，天津老味儿', price:'¥10', delivery:true, hot:false },
+  { id:'f455', name:'肠粉', cat:'早餐', emoji:'🫔', detail:'米浆蒸制薄如蝉翼，裹虾仁/牛肉淋豉油', price:'¥15', delivery:true, hot:false },
+  { id:'f456', name:'豆腐脑', cat:'早餐', emoji:'🥣', detail:'嫩豆腐+卤汁/糖水，咸甜之争永不休', price:'¥6', delivery:true, hot:false },
+  { id:'f457', name:'胡辣汤', cat:'早餐', emoji:'🍲', detail:'牛肉+木耳+粉条+胡椒，浓稠麻辣河南早餐', price:'¥10', delivery:true, hot:false },
+  { id:'f458', name:'热干面', cat:'早餐', emoji:'🍜', detail:'碱面+芝麻酱+萝卜丁+葱花，武汉早餐之王', price:'¥8', delivery:true, hot:false },
+  { id:'f459', name:'粢饭团', cat:'早餐', emoji:'🍙', detail:'糯米+油条+榨菜+肉松，上海早餐四大金刚', price:'¥8', delivery:true, hot:false },
+  { id:'f460', name:'肉包子', cat:'早餐', emoji:'🥟', detail:'发面包子+猪肉大葱馅，早餐标配', price:'¥3', delivery:true, hot:false },
+  { id:'f461', name:'鸡蛋灌饼', cat:'早餐', emoji:'🫓', detail:'面饼灌入蛋液煎至金黄，配生菜火腿', price:'¥8', delivery:true, hot:false },
+  { id:'f462', name:'皮蛋瘦肉粥', cat:'早餐', emoji:'🥣', detail:'皮蛋+瘦肉+姜丝+白粥，暖心暖胃', price:'¥12', delivery:true, hot:false },
+  { id:'f463', name:'虾饺', cat:'早餐', emoji:'🥟', detail:'澄面皮+整只鲜虾，广式早茶必点', price:'¥28', delivery:true, hot:false },
+  { id:'f464', name:'烧麦', cat:'早餐', emoji:'🥟', detail:'薄皮包糯米+肉丁+香菇，顶部开花', price:'¥12', delivery:true, hot:false },
+  { id:'f465', name:'粢饭糕', cat:'早餐', emoji:'🍘', detail:'米饭压实切块油炸，外酥里糯，上海早餐', price:'¥5', delivery:true, hot:false },
+  { id:'f466', name:'葱油饼', cat:'早餐', emoji:'🫓', detail:'葱花+猪油+面团煎至金黄酥脆', price:'¥6', delivery:true, hot:false },
+  { id:'f467', name:'牛油果沙拉', cat:'轻食', emoji:'🥑', detail:'牛油果+生菜+番茄+鸡胸肉+油醋汁', price:'¥28', delivery:true, hot:false },
+  { id:'f468', name:'藜麦碗', cat:'轻食', emoji:'🥗', detail:'藜麦+烤蔬菜+鹰嘴豆+牛油果+酸奶酱', price:'¥32', delivery:true, hot:false },
+  { id:'f469', name:'波奇饭', cat:'轻食', emoji:'🍚', detail:'三文鱼+牛油果+海苔+毛豆+寿司饭，夏威夷风味', price:'¥38', delivery:true, hot:false },
+  { id:'f470', name:'全麦三明治', cat:'轻食', emoji:'🥪', detail:'全麦面包+鸡胸肉+生菜+番茄+低脂芝士', price:'¥22', delivery:true, hot:false },
+  { id:'f471', name:'希腊酸奶碗', cat:'轻食', emoji:'🥣', detail:'希腊酸奶+格兰诺拉+莓果+蜂蜜', price:'¥25', delivery:true, hot:false },
+  { id:'f472', name:'越南春卷', cat:'轻食', emoji:'🫔', detail:'米纸包裹虾肉米粉生菜，蘸鱼露清爽无敌', price:'¥18', delivery:true, hot:false },
+  { id:'f473', name:'羽衣甘蓝沙拉', cat:'轻食', emoji:'🥬', detail:'羽衣甘蓝+苹果+核桃+蔓越莓+柠檬汁', price:'¥25', delivery:true, hot:false },
+  { id:'f474', name:'水煮鸡胸套餐', cat:'轻食', emoji:'🍱', detail:'鸡胸肉+西兰花+糙米饭+水煮蛋，健身标配', price:'¥28', delivery:true, hot:false },
+  { id:'f475', name:'金枪鱼沙拉', cat:'轻食', emoji:'🥗', detail:'金枪鱼+生菜+玉米+鸡蛋+千岛酱', price:'¥22', delivery:true, hot:false },
+  { id:'f476', name:'思慕雪碗', cat:'轻食', emoji:'🍓', detail:'香蕉+莓果+酸奶+格兰诺拉，ins风早餐', price:'¥28', delivery:true, hot:false },,
+{ id:'f477', name:'新疆炒米粉', cat:'中餐', emoji:'🍜', detail:'粗米粉+辣酱+鸡肉+芹菜，辣到流泪新疆爆款', price:'¥18', delivery:true, hot:false },
+  { id:'f478', name:'烤包子', cat:'中餐', emoji:'🥟', detail:'羊肉+洋葱馅酥皮烤制，新疆早餐经典', price:'¥5', delivery:true, hot:false },
+  { id:'f479', name:'缸子肉', cat:'中餐', emoji:'🍲', detail:'羊肉+胡萝卜+恰玛古搪瓷缸炖煮，新疆传统', price:'¥25', delivery:true, hot:false },
+  { id:'f480', name:'牛肉面', cat:'中餐', emoji:'🍜', detail:'兰州牛肉面加盟版，一碗入魂', price:'¥16', delivery:true, hot:false },
+  { id:'f481', name:'西安甑糕', cat:'中餐', emoji:'🍚', detail:'糯米+红枣+芸豆蒸制，甜蜜软糯西安特色', price:'¥10', delivery:true, hot:false },
+  { id:'f482', name:'日式可乐饼', cat:'日韩', emoji:'🥔', detail:'土豆泥+肉末裹面包糠油炸，外酥里绵', price:'¥12', delivery:true, hot:false },
+  { id:'f483', name:'日式炸鸡块', cat:'日韩', emoji:'🍗', detail:'酱油+姜+蒜腌制后油炸，居酒屋必备', price:'¥22', delivery:true, hot:false },
+  { id:'f484', name:'韩式嫩豆腐汤', cat:'日韩', emoji:'🍲', detail:'嫩豆腐+蛤蜊+鸡蛋+辣椒，鲜辣滚烫', price:'¥25', delivery:true, hot:false },
+  { id:'f485', name:'日式荞麦面', cat:'日韩', emoji:'🍜', detail:'荞麦面+蘸汁+葱花+芥末，清爽夏日', price:'¥28', delivery:true, hot:false },
+  { id:'f486', name:'韩式排骨汤', cat:'日韩', emoji:'🍲', detail:'牛排骨+萝卜+粉丝清炖，鲜香浓郁', price:'¥48', delivery:true, hot:false },
+  { id:'f487', name:'泰式烤鸡', cat:'东南亚', emoji:'🐔', detail:'香茅+蒜+鱼露腌制炭火烤制，街头美味', price:'¥35', delivery:true, hot:false },
+  { id:'f488', name:'马来炒粿条', cat:'东南亚', emoji:'🍜', detail:'粿条+虾+鸡蛋+豆芽+甜酱油猛火快炒', price:'¥25', delivery:true, hot:false },
+  { id:'f489', name:'印度咖喱鸡', cat:'东南亚', emoji:'🍛', detail:'鸡肉+番茄+洋葱+印度香料炖煮，配馕一绝', price:'¥38', delivery:true, hot:false },
+  { id:'f490', name:'缅甸鱼汤粉', cat:'东南亚', emoji:'🍜', detail:'鲶鱼汤+米粉+水煮蛋+香菜+柠檬，缅甸国菜', price:'¥22', delivery:true, hot:false },
+  { id:'f491', name:'印尼沙嗲', cat:'东南亚', emoji:'🍢', detail:'鸡肉/羊肉串+花生酱+甜酱油，印尼国民小吃', price:'¥25', delivery:true, hot:false },
+  { id:'f492', name:'蜜瓜火腿', cat:'西餐', emoji:'🍈', detail:'帕尔马火腿+蜜瓜，咸甜交融意式经典开胃', price:'¥48', delivery:false, hot:false },
+  { id:'f493', name:'卡普瑞沙拉', cat:'西餐', emoji:'🥗', detail:'番茄+马苏里拉芝士+罗勒+橄榄油，意大利三色', price:'¥28', delivery:true, hot:false },
+  { id:'f494', name:'西班牙土豆蛋饼', cat:'西餐', emoji:'🥘', detail:'土豆+鸡蛋+洋葱煎制，西班牙国民美食', price:'¥22', delivery:true, hot:false },
+  { id:'f495', name:'希腊烤肉卷', cat:'西餐', emoji:'🌯', detail:'烤肉+番茄+洋葱+酸奶酱+皮塔饼，希腊街头', price:'¥25', delivery:true, hot:false },
+  { id:'f496', name:'法式焗青口', cat:'西餐', emoji:'🦪', detail:'青口+白酒+蒜+香草+奶油焗煮', price:'¥58', delivery:false, hot:false },
+  { id:'f497', name:'重庆美蛙鱼头火锅', cat:'火锅', emoji:'🐸', detail:'美蛙+鱼头+麻辣红汤，鲜嫩过瘾', price:'¥78', delivery:false, hot:true },
+  { id:'f498', name:'云南野生菌火锅', cat:'火锅', emoji:'🍄', detail:'松茸+鸡枞+牛肝菌+土鸡，菌香四溢', price:'¥138', delivery:false, hot:true },
+  { id:'f499', name:'糍粑', cat:'小吃', emoji:'🍡', detail:'糯米捣制油炸/蒸制，淋红糖黄豆粉，四川特色', price:'¥10', delivery:true, hot:false },
+  { id:'f500', name:'凉虾', cat:'小吃', emoji:'🥤', detail:'米浆漏制虾形凉糕+红糖水，重庆夏日消暑', price:'¥8', delivery:true, hot:false },
+  { id:'f501', name:'冰粉', cat:'小吃', emoji:'🍧', detail:'冰粉+红糖+花生+葡萄干+水果，四川夏日标配', price:'¥10', delivery:true, hot:false },
+  { id:'f502', name:'炸鲜奶', cat:'小吃', emoji:'🥛', detail:'牛奶凝固切条裹粉油炸，外酥里嫩顺德名点', price:'¥15', delivery:true, hot:false },
+  { id:'f503', name:'烤羊腰', cat:'烧烤', emoji:'🐑', detail:'羊腰子炭火烤制撒孜然辣椒，男人的加油站', price:'¥18', delivery:true, hot:false },
+  { id:'f504', name:'烤蚕蛹', cat:'烧烤', emoji:'🐛', detail:'蚕蛹炭火烤制，高蛋白嘎嘣脆，东北特色', price:'¥15', delivery:false, hot:false },
+  { id:'f505', name:'烤鸡爪', cat:'烧烤', emoji:'🐔', detail:'鸡爪先卤后烤，软糯脱骨胶原蛋白', price:'¥8', delivery:true, hot:false },
+  { id:'f506', name:'慕斯蛋糕', cat:'甜品', emoji:'🍰', detail:'巧克力/芒果/抹茶慕斯，入口即化', price:'¥25', delivery:true, hot:false },
+  { id:'f507', name:'布丁', cat:'甜品', emoji:'🍮', detail:'焦糖/牛奶/芒果布丁，Q弹嫩滑', price:'¥12', delivery:true, hot:false },
+  { id:'f508', name:'奶茶三兄弟', cat:'饮品', emoji:'🧋', detail:'珍珠+布丁+仙草+奶茶，料多超满足', price:'¥16', delivery:true, hot:false },
+  { id:'f509', name:'凯撒鸡肉卷', cat:'轻食', emoji:'🌯', detail:'鸡胸肉+生菜+凯撒酱+番茄+卷饼', price:'¥22', delivery:true, hot:false },
+  { id:'f510', name:'三文鱼波奇碗', cat:'轻食', emoji:'🍚', detail:'三文鱼+牛油果+毛豆+海苔+寿司饭+酱油', price:'¥42', delivery:true, hot:false },
+  { id:'f511', name:'豆花', cat:'早餐', emoji:'🥣', detail:'嫩豆花+红糖水/麻辣卤汁，甜咸任选', price:'¥6', delivery:true, hot:false },
+  { id:'f512', name:'油茶', cat:'早餐', emoji:'🍲', detail:'米粉糊+馓子+花生+榨菜，川渝传统早餐', price:'¥8', delivery:true, hot:false },
+];
+
+
+const TRENDING = [
+  { name:'冒烤鸭',       tag:'抖音爆火',     emoji:'🦆' },
+  { name:'淄博烧烤',      tag:'年度美食',     emoji:'🫓' },
+  { name:'酱香拿铁',      tag:'小红书刷屏',   emoji:'☕' },
+  { name:'天水麻辣烫',    tag:'新晋顶流',     emoji:'🥘' },
+  { name:'脆皮五花肉',    tag:'夜市之王',     emoji:'🥓' },
+  { name:'芋泥香酥鸭',    tag:'网红打卡',     emoji:'🦆' },
+];
+
+// =====================================================
+//  状态
+// =====================================================
+let currentCategory = '全部';
+let currentResult   = null;
+let isDrawing       = false;
+let userLocation    = { city:'', lat:null, lng:null };
+
+// =====================================================
+//  localStorage 封装
+// =====================================================
+function lsGet(key, fallback) { try { const v=localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch(e) { return fallback; } }
+function lsSet(key, val)    { try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {} }
+
+function getFavs()     { return lsGet('food_favs', []); }
+function setFavs(arr)  { lsSet('food_favs', arr); }
+function getHist()     { return lsGet('food_hist', []); }
+function setHist(arr)  { lsSet('food_hist', arr.slice(0, 50)); }
+function getDislikes() { return lsGet('food_dislikes', []); }
+function setDislikes(arr) { lsSet('food_dislikes', arr); }
+function getLocCache() { return lsGet('food_loc', null); }
+function setLocCache(v){ lsSet('food_loc', v); }
+
+// =====================================================
+//  初始化
+// =====================================================
+document.addEventListener('DOMContentLoaded', () => {
+  buildCategoryChips();
+  initNav();
+  renderTrending();
+  updateFavBadge();
+  autoLocation();
+});
+
+// =====================================================
+//  分类胶囊
+// =====================================================
+function buildCategoryChips() {
+  const cats = ['全部','中餐','小吃','日韩','西餐','东南亚','甜品','快餐','火锅','烧烤','饮品','早餐','轻食'];
+  const emojis = { '全部':'🎯','中餐':'🥢','小吃':'🍢','日韩':'🍣','西餐':'🥩','东南亚':'🥘','甜品':'🍰','快餐':'🍔','火锅':'🍲','烧烤':'🍖','饮品':'🥤','早餐':'🥖','轻食':'🥗' };
+  const container = document.getElementById('categoryFilters');
+  container.innerHTML = cats.map(c => {
+    const active = c === currentCategory;
+    return `<button class="cat-chip px-4 py-2 rounded-full text-sm ${active?'active':'bg-gray-100 text-gray-500'}"
+              data-cat="${c}">${emojis[c]} ${c}</button>`;
+  }).join('');
+
+  container.addEventListener('click', e => {
+    const btn = e.target.closest('.cat-chip');
+    if (!btn) return;
+    currentCategory = btn.dataset.cat;
+    container.querySelectorAll('.cat-chip').forEach(b => {
+      b.className = b.dataset.cat === currentCategory
+        ? 'cat-chip px-4 py-2 rounded-full text-sm active'
+        : 'cat-chip px-4 py-2 rounded-full text-sm bg-gray-100 text-gray-500';
+    });
+    // 切换分类后自动抽一签
+    drawFood();
+  });
+}
+
+// =====================================================
+//  底部导航
+// =====================================================
+function initNav() {
+  const homeSections = [
+    'categoryFilters','drawArea','nearbySection',
+    document.querySelector('.bg-white.rounded-2xl.shadow-sm.border.border-orange-50.p-4.mb-4')?.nextElementSibling ? '' : '',
+  ];
+  // 获取主页各区块引用
+  const trendingBlock   = document.querySelectorAll('.bg-white.rounded-2xl.shadow-sm.border.border-orange-50.p-4.mb-4')[0];
+  const deliveryBlock   = document.querySelectorAll('.bg-white.rounded-2xl.shadow-sm.border.border-orange-50.p-4.mb-4')[1];
+
+  document.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.tab;
+
+      // 高亮
+      document.querySelectorAll('.nav-btn').forEach(b => { b.classList.remove('text-warm-500'); b.classList.add('text-gray-400'); });
+      btn.classList.add('text-warm-500');
+      btn.classList.remove('text-gray-400');
+      // 更新子元素字体粗细
+      btn.querySelector('span:last-child').classList.remove('font-medium');
+      btn.querySelector('span:last-child').classList.add('font-semibold');
+      document.querySelectorAll('.nav-btn').forEach(b => {
+        if (b !== btn) { b.querySelector('span:last-child').classList.remove('font-semibold'); b.querySelector('span:last-child').classList.add('font-medium'); }
+      });
+
+      // 面板显隐
+      const isHome = tab === 'home';
+      document.querySelector('header').style.display = isHome ? '' : 'none';
+      document.getElementById('categoryFilters').style.display = isHome ? '' : 'none';
+      document.getElementById('drawArea').style.display = isHome ? '' : 'none';
+      document.getElementById('nearbySection').style.display = isHome ? '' : 'none';
+      if (trendingBlock) trendingBlock.style.display = isHome ? '' : 'none';
+      if (deliveryBlock) deliveryBlock.style.display = isHome ? '' : 'none';
+
+      document.getElementById('favoritesPanel').classList.toggle('hidden', tab !== 'favorites');
+      document.getElementById('historyPanel').classList.toggle('hidden', tab !== 'history');
+
+      if (tab === 'favorites') renderFavs();
+      if (tab === 'history')   renderHist();
+    });
+  });
+}
+
+// =====================================================
+//  抽签核心逻辑（简化版：只展示结果）
+// =====================================================
+function drawFood() {
+  if (isDrawing) return;
+  isDrawing = true;
+  const btn = document.getElementById('mainDrawBtn');
+  if (btn) { btn.textContent = '🎰 抽取中…'; btn.style.opacity = '0.6'; }
+
+  // 构造可用池（过滤不喜欢的）
+  const dislikes = getDislikes();
+  let pool = FOOD_DB.filter(f => !dislikes.includes(f.id));
+  if (currentCategory !== '全部') pool = pool.filter(f => f.cat === currentCategory);
+  if (pool.length === 0) {
+    pool = FOOD_DB.filter(f => !dislikes.includes(f.id));
+    if (pool.length === 0) { showToast('所有美食都被你 pass 了，已重置屏蔽列表'); resetDislikesSilent(); pool = [...FOOD_DB]; }
+  }
+
+  const target = pool[Math.floor(Math.random() * pool.length)];
+
+  // 快速闪烁效果（0.6秒内随机切换显示临时名称）
+  const resultNameEl = document.getElementById('resultName');
+  const resultEmojiEl = document.getElementById('resultEmoji');
+  const resultDetailEl = document.getElementById('resultDetail');
+  const resultMetaEl = document.getElementById('resultMeta');
+  const resultTagsEl = document.getElementById('resultTags');
+
+  // 先切换到结果态
+  document.getElementById('initialState').classList.add('hidden');
+  const resultState = document.getElementById('resultState');
+  resultState.classList.remove('hidden');
+
+  // 闪烁动画
+  let shuffleCount = 0;
+  const maxShuffles = 12;
+  const shuffleInterval = setInterval(() => {
+    const r = pool[Math.floor(Math.random() * pool.length)];
+    resultNameEl.textContent = r.name;
+    resultEmojiEl.textContent = r.emoji;
+    shuffleCount++;
+    if (shuffleCount >= maxShuffles) {
+      clearInterval(shuffleInterval);
+      // 显示最终结果
+      showResult(target);
+      isDrawing = false;
+      if (btn) { btn.textContent = '🎲 来一签！'; btn.style.opacity = '1'; }
+    }
+  }, 60);
+
+  // 滚动到结果卡片
+  setTimeout(() => {
+    resultState.scrollIntoView({ behavior:'smooth', block:'center' });
+  }, 150);
+}
+
+function showResult(item) {
+  currentResult = item;
+  const card = document.getElementById('resultCard');
+  card.classList.remove('result-enter');
+  void card.offsetWidth;
+  card.classList.add('result-enter');
+
+  document.getElementById('resultName').textContent   = item.name;
+  document.getElementById('resultEmoji').textContent  = item.emoji;
+  document.getElementById('resultMeta').textContent   = `${item.cat}  |  ${item.price||'价格不详'}`;
+  document.getElementById('resultDetail').textContent = item.detail;
+
+  // 标签
+  let tags = '';
+  if (item.delivery) tags += '<span class="badge badge-takeout">🛵 外卖</span> ';
+  if (item.hot)      tags += '<span class="badge badge-hot">🔥 热门</span> ';
+  document.getElementById('resultTags').innerHTML = tags;
+
+  // 收藏按钮状态
+  updateFavBtnState();
+
+  // 显示操作按钮区
+  document.getElementById('initialState').classList.add('hidden');
+  document.getElementById('resultState').classList.remove('hidden');
+
+  // 存历史
+  addHist(item);
+}
+
+function updateFavBtnState() {
+  const btn = document.getElementById('favBtn');
+  if (!currentResult) return;
+  const isFaved = getFavs().some(f => f.id === currentResult.id);
+  btn.innerHTML = isFaved ? '❤️ 已收藏' : '🤍 收藏';
+  if (isFaved) { btn.classList.add('text-red-500'); btn.classList.remove('text-orange-500'); }
+  else         { btn.classList.remove('text-red-500'); btn.classList.add('text-orange-500'); }
+}
+
+// =====================================================
+//  不喜欢功能
+// =====================================================
+function dislikeCurrent() {
+  if (!currentResult) return;
+  const dislikes = getDislikes();
+  if (!dislikes.includes(currentResult.id)) {
+    dislikes.push(currentResult.id);
+    setDislikes(dislikes);
+  }
+
+  // 动画移除
+  const card = document.getElementById('resultCard');
+  card.classList.add('dislike-remove');
+  showToast(`已屏蔽「${currentResult.name}」`);
+
+  setTimeout(() => {
+    // 自动抽下一签
+    card.classList.remove('dislike-remove');
+    drawFood();
+  }, 350);
+}
+
+function resetDislikes() {
+  setDislikes([]);
+  showToast('已重置屏蔽列表');
+}
+function resetDislikesSilent() {
+  setDislikes([]);
+}
+
+// =====================================================
+//  收藏
+// =====================================================
+function favCurrent() {
+  if (!currentResult) return;
+  let favs = getFavs();
+  const idx = favs.findIndex(f => f.id === currentResult.id);
+  if (idx > -1) {
+    favs.splice(idx, 1);
+    showToast('已取消收藏');
+  } else {
+    favs.unshift({ ...currentResult, time: Date.now() });
+    showToast('收藏成功 ❤️');
+  }
+  setFavs(favs);
+  updateFavBadge();
+  updateFavBtnState();
+}
+
+function renderFavs() {
+  const favs = getFavs();
+  const list = document.getElementById('favoritesList');
+  const empty = document.getElementById('favEmpty');
+  const count = document.getElementById('favCount');
+  count.textContent = favs.length ? `${favs.length} 项` : '';
+
+  if (!favs.length) { list.innerHTML=''; empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  list.innerHTML = favs.map((f,i) => `
+    <div class="bg-white rounded-xl p-3 flex items-center gap-3 shadow-sm border border-gray-50">
+      <span class="text-2xl flex-shrink-0">${f.emoji}</span>
+      <div class="flex-1 min-w-0">
+        <div class="font-semibold text-sm text-gray-700 truncate">${f.name}</div>
+        <div class="text-xs text-gray-400">${f.cat} | ${f.price||''}</div>
+      </div>
+      <button onclick="removeFav(${i})" class="text-gray-300 hover:text-red-400 text-lg px-1">×</button>
+    </div>
+  `).join('');
+}
+function removeFav(idx) {
+  let favs = getFavs();
+  favs.splice(idx, 1);
+  setFavs(favs);
+  renderFavs();
+  updateFavBadge();
+  updateFavBtnState();
+}
+function updateFavBadge() {
+  const badge = document.getElementById('favBadge');
+  const cnt = getFavs().length;
+  if (cnt > 0) { badge.textContent = cnt > 99 ? '99+' : cnt; badge.classList.remove('hidden'); }
+  else { badge.classList.add('hidden'); }
+}
+
+// =====================================================
+//  历史
+// =====================================================
+function addHist(item) {
+  let hist = getHist();
+  hist.unshift({ id:item.id, name:item.name, emoji:item.emoji, cat:item.cat, price:item.price, time:new Date().toISOString() });
+  setHist(hist);
+}
+function renderHist() {
+  const hist = getHist();
+  const list = document.getElementById('historyList');
+  const empty = document.getElementById('histEmpty');
+  if (!hist.length) { list.innerHTML=''; empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  list.innerHTML = hist.map(h => `
+    <div class="bg-white rounded-xl p-3 flex items-center gap-3 shadow-sm border border-gray-50">
+      <span class="text-2xl flex-shrink-0">${h.emoji}</span>
+      <div class="flex-1 min-w-0">
+        <div class="font-semibold text-sm text-gray-700 truncate">${h.name}</div>
+        <div class="text-xs text-gray-400">${h.cat} | ${new Date(h.time).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
+      </div>
+      <button onclick="redrawHist('${h.id}')" class="text-xs px-3 py-1 rounded-full font-medium text-warm-500 bg-warm-50 hover:bg-warm-100 transition">再抽</button>
+    </div>
+  `).join('');
+}
+function clearHistory() {
+  if (!confirm('确定清空所有抽签历史？')) return;
+  setHist([]);
+  renderHist();
+  showToast('历史已清空');
+}
+function redrawHist(id) {
+  document.querySelectorAll('.nav-btn')[0].click();
+  const item = FOOD_DB.find(f => f.id === id);
+  if (item) currentCategory = item.cat;
+  drawFood();
+}
+
+// =====================================================
+//  分享
+// =====================================================
+function shareCurrent() {
+  if (!currentResult) return;
+  const text = `🎲 今天吃啥？抽到了：${currentResult.emoji} ${currentResult.name}！\n${currentResult.detail}`;
+  if (navigator.share) {
+    navigator.share({ title:'今天吃啥·干饭抽签器', text }).catch(()=>{});
+  } else {
+    navigator.clipboard.writeText(text).then(() => showToast('已复制分享文案'));
+  }
+}
+
+// =====================================================
+//  热门推荐
+// =====================================================
+function renderTrending() {
+  const el = document.getElementById('trendingList');
+  el.innerHTML = TRENDING.map(t => `
+    <button onclick="trendDraw('${t.name}')"
+      class="bg-gradient-to-br from-red-50 to-orange-50 rounded-xl p-3 text-left
+             hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 border border-orange-100/60">
+      <div class="flex items-center gap-2.5">
+        <span class="text-2xl">${t.emoji}</span>
+        <div class="min-w-0">
+          <div class="font-semibold text-sm text-gray-700 truncate">${t.name}</div>
+          <span class="badge badge-hot">${t.tag}</span>
+        </div>
+      </div>
+    </button>
+  `).join('');
+}
+function trendDraw(name) {
+  document.querySelectorAll('.nav-btn')[0].click();
+  const found = FOOD_DB.find(f => f.name.includes(name) || name.includes(f.name));
+  if (found) {
+    currentResult = found;
+    document.getElementById('initialState').classList.add('hidden');
+    document.getElementById('resultState').classList.remove('hidden');
+    showResult(found);
+    document.getElementById('resultState').scrollIntoView({ behavior:'smooth', block:'center' });
+  } else {
+    showToast('即将上线，敬请期待');
+  }
+}
+
+// =====================================================
+//  外卖检索
+// =====================================================
+function searchDelivery() {
+  const kw = document.getElementById('deliveryInput').value.trim();
+  const el = document.getElementById('deliveryResult');
+  if (!kw) { el.innerHTML=''; return; }
+  const results = FOOD_DB.filter(f =>
+    f.name.includes(kw) || f.cat.includes(kw) || f.detail.includes(kw)
+  ).slice(0, 6);
+  if (!results.length) {
+    el.innerHTML = '<p class="text-center text-gray-400 text-sm py-4">没找到，换个关键词试试~</p>';
+    return;
+  }
+  el.innerHTML = results.map(r => `
+    <div onclick="pickDelivery('${r.id}')"
+      class="bg-white rounded-xl p-3 flex items-center justify-between shadow-sm border border-gray-50
+             hover:border-warm-200 hover:shadow-md transition-all cursor-pointer">
+      <div class="flex items-center gap-3">
+        <span class="text-2xl">${r.emoji}</span>
+        <div>
+          <div class="font-semibold text-sm text-gray-700">${r.name}</div>
+          <div class="text-xs text-gray-400">${r.cat} | ${r.price||''}</div>
+        </div>
+      </div>
+      ${r.delivery ? '<span class="badge badge-takeout">🛵 外卖</span>' : '<span class="badge" style="background:#F5F5F5;color:#999;">堂食</span>'}
+    </div>
+  `).join('');
+}
+function pickDelivery(id) {
+  const item = FOOD_DB.find(f => f.id === id);
+  if (!item) return;
+  document.querySelectorAll('.nav-btn')[0].click();
+  currentResult = item;
+  document.getElementById('initialState').classList.add('hidden');
+  document.getElementById('resultState').classList.remove('hidden');
+  showResult(item);
+  document.getElementById('resultState').scrollIntoView({ behavior:'smooth', block:'center' });
+}
+document.getElementById('deliveryInput').addEventListener('keydown', e => { if (e.key==='Enter') searchDelivery(); });
+
+// =====================================================
+//  定位（自动 + 缓存）
+// =====================================================
+let locationResolved = false;
+
+function autoLocation() {
+  const cached = getLocCache();
+  const locText = document.getElementById('locationText');
+
+  if (cached && cached.city) {
+    userLocation = cached;
+    locText.textContent = '📍 ' + cached.city;
+    fetchNearbyByCity(cached.city);
+  }
+
+  // 并行策略：同时尝试浏览器精确定位和IP定位，谁先完成用谁
+  // 同时设置8秒兜底，避免因权限弹窗无响应而卡死
+
+  // 8秒兜底计时器
+  setTimeout(() => {
+    if (!locationResolved && (!cached || !cached.city)) {
+      console.warn('定位8秒超时，强制降级');
+      ipFallback();
+    }
+  }, 8000);
+
+  // IP定位立即启动（无权限弹窗，通常2-3秒完成）
+  if (!cached || !cached.city) {
+    ipFallback();
+  }
+
+  // 浏览器精确定位作为增强（会弹权限，慢但精确）
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        userLocation.lat = pos.coords.latitude;
+        userLocation.lng = pos.coords.longitude;
+        fetchNearby(pos.coords.latitude, pos.coords.longitude);
+      },
+      (err) => {
+        console.warn('浏览器定位失败:', err.code, err.message);
+        // 失败不影响，IP定位已经在跑或已完成
+      },
+      { enableHighAccuracy: false, timeout: 6000, maximumAge: 300000 }
+    );
+  }
+}
+
+function refreshLocation() {
+  const locText = document.getElementById('locationText');
+  locText.textContent = '刷新定位…';
+  if (!navigator.geolocation) { ipFallback(); return; }
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      userLocation.lat = pos.coords.latitude;
+      userLocation.lng = pos.coords.longitude;
+      fetchNearby(pos.coords.latitude, pos.coords.longitude);
+    },
+    () => ipFallback(),
+    { enableHighAccuracy: true, timeout: 8000 }
+  );
+}
+
+function ipFallback() {
+  const locText = document.getElementById('locationText');
+  locText.textContent = '正在通过IP定位…';
+  
+  fetch(`https://restapi.amap.com/v3/ip?key=${AMAP_KEY}`)
+    .then(r => r.json())
+    .then(d => {
+      console.log('高德IP定位返回:', d); // 调试信息
+      if (d.status === '1') {
+        userLocation.city = d.city || d.province || '未知';
+        setLocCache({ city: userLocation.city, lat: null, lng: null });
+        locationResolved = true;
+        locText.textContent = '📍 ' + userLocation.city;
+        fetchNearbyByCity(userLocation.city);
+      } else {
+        console.warn('高德IP定位失败:', d);
+        locText.textContent = '定位不可用 (API错误)';
+        // 备用方案：使用公共IP定位
+        fallbackToPublicAPI();
+      }
+    })
+    .catch(err => { 
+      console.error('高德IP定位网络错误:', err);
+      locText.textContent = '定位不可用 (网络错误)';
+      fallbackToPublicAPI();
+    });
+}
+
+function fallbackToPublicAPI() {
+  const locText = document.getElementById('locationText');
+  locText.textContent = '正在尝试备用定位…';
+  
+  // 备用方案1：使用ip-api.com
+  fetch('http://ip-api.com/json/?fields=status,message,city,regionName,country')
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'success') {
+        userLocation.city = data.city || data.regionName || '未知';
+        setLocCache({ city: userLocation.city, lat: null, lng: null });
+        locationResolved = true;
+        locText.textContent = '📍 ' + userLocation.city;
+        fetchNearbyByCity(userLocation.city);
+      } else {
+        // 备用方案2：使用纯前端IP定位
+        locText.textContent = '📍 全国';
+        userLocation.city = '全国';
+        setLocCache({ city: '全国', lat: null, lng: null });
+      }
+    })
+    .catch(() => {
+      // 所有方案都失败
+      locText.textContent = '📍 全国 (定位失败)';
+      userLocation.city = '全国';
+      setLocCache({ city: '全国', lat: null, lng: null });
+    });
+}
+
+function fetchNearby(lat, lng) {
+  const url = `https://restapi.amap.com/v3/place/around?key=${AMAP_KEY}&location=${lng},${lat}&radius=3000&types=050000&offset=6&extensions=all`;
+  fetch(url).then(r=>r.json()).then(data => {
+    if (data.status==='1' && data.pois && data.pois.length) {
+      userLocation.city = data.pois[0]?.cityname || '';
+      setLocCache({ city: userLocation.city, lat, lng });
+      locationResolved = true;
+      document.getElementById('locationText').textContent = '📍 ' + userLocation.city;
+      renderNearby(data.pois);
+    }
+  }).catch(() => {});
+}
+
+function fetchNearbyByCity(city) {
+  fetch(`https://restapi.amap.com/v3/place/text?key=${AMAP_KEY}&keywords=餐饮&city=${encodeURIComponent(city)}&offset=6&extensions=all`)
+    .then(r=>r.json()).then(data => {
+      if (data.status==='1' && data.pois && data.pois.length) renderNearby(data.pois);
+    }).catch(()=>{});
+}
+
+function renderNearby(pois) {
+  const section = document.getElementById('nearbySection');
+  const list = document.getElementById('nearbyList');
+  document.getElementById('nearbyCity').textContent = userLocation.city || '';
+
+  if (!pois || !pois.length) { section.classList.add('hidden'); return; }
+  section.classList.remove('hidden');
+
+  // 同时更新结果卡片下面也展示附近商家（如果结果区可见）
+  list.innerHTML = pois.map(p => {
+    const dist = p.distance
+      ? (p.distance < 1000 ? `${p.distance}m` : `${(p.distance/1000).toFixed(1)}km`)
+      : '';
+    const type = (p.type||'').split(';')[0].replace('餐饮服务;','').replace('餐饮相关;','') || '美食';
+    const rating = p.biz_ext?.rating || '';
+    const cost   = p.biz_ext?.cost || '';
+    return `
+      <div class="flex items-center justify-between py-2.5 border-b border-gray-50 last:border-0">
+        <div class="flex-1 min-w-0">
+          <div class="font-semibold text-sm text-gray-700 truncate">${p.name}</div>
+          <div class="flex items-center gap-2 mt-0.5 text-xs text-gray-400">
+            <span>${type}</span>
+            ${dist ? `<span>·</span><span>${dist}</span>` : ''}
+            ${cost ? `<span>·</span><span>${cost}</span>` : ''}
+          </div>
+        </div>
+        ${rating ? `<span class="text-xs font-semibold text-warm-500 bg-warm-50 px-2 py-0.5 rounded-full ml-2">${rating}分</span>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+// =====================================================
+//  Toast
+// =====================================================
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._tid);
+  t._tid = setTimeout(() => t.classList.remove('show'), 1800);
+}
+</script>
+</body>
+</html>
