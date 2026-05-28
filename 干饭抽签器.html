@@ -1393,23 +1393,42 @@ function fallbackToPublicAPI() {
 }
 
 function fetchNearby(lat, lng) {
-  const url = `https://restapi.amap.com/v3/place/around?key=${AMAP_KEY}&location=${lng},${lat}&radius=3000&types=050000&offset=12&extensions=all`;
-  fetch(url).then(r=>r.json()).then(data => {
-    if (data.status==='1' && data.pois && data.pois.length) {
-      userLocation.city = data.pois[0]?.cityname || '';
+  // 分4页抓取，每页25条，共100条
+  const pages = [1,2,3,4].map(page => {
+    const url = `https://restapi.amap.com/v3/place/around?key=${AMAP_KEY}&location=${lng},${lat}&radius=3000&types=050000&offset=25&page=${page}&extensions=all`;
+    return fetch(url).then(r=>r.json());
+  });
+  
+  Promise.all(pages).then(results => {
+    let allPois = [];
+    results.forEach(data => {
+      if (data.status==='1' && data.pois) {
+        if (!userLocation.city) userLocation.city = data.pois[0]?.cityname || '';
+        allPois = allPois.concat(data.pois);
+      }
+    });
+    if (allPois.length) {
       setLocCache({ city: userLocation.city, lat, lng });
       locationResolved = true;
       document.getElementById('locationText').textContent = '📍 ' + userLocation.city;
-      renderNearby(data.pois);
+      renderNearby(allPois);
     }
   }).catch(() => {});
 }
 
 function fetchNearbyByCity(city) {
-  fetch(`https://restapi.amap.com/v3/place/text?key=${AMAP_KEY}&keywords=餐饮&city=${encodeURIComponent(city)}&offset=12&extensions=all`)
-    .then(r=>r.json()).then(data => {
-      if (data.status==='1' && data.pois && data.pois.length) renderNearby(data.pois);
-    }).catch(()=>{});
+  const pages = [1,2,3,4].map(page => {
+    const url = `https://restapi.amap.com/v3/place/text?key=${AMAP_KEY}&keywords=餐饮&city=${encodeURIComponent(city)}&offset=25&page=${page}&extensions=all`;
+    return fetch(url).then(r=>r.json());
+  });
+
+  Promise.all(pages).then(results => {
+    let allPois = [];
+    results.forEach(data => {
+      if (data.status==='1' && data.pois) allPois = allPois.concat(data.pois);
+    });
+    if (allPois.length) renderNearby(allPois);
+  }).catch(()=>{});
 }
 
 function renderNearby(pois) {
