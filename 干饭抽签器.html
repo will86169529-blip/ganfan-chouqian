@@ -1308,16 +1308,31 @@ function autoLocation() {
 function refreshLocation() {
   const locText = document.getElementById('locationText');
   locText.textContent = '刷新定位…';
-  if (!navigator.geolocation) { ipFallback(); return; }
-  navigator.geolocation.getCurrentPosition(
-    pos => {
-      userLocation.lat = pos.coords.latitude;
-      userLocation.lng = pos.coords.longitude;
-      fetchNearby(pos.coords.latitude, pos.coords.longitude);
-    },
-    () => ipFallback(),
-    { enableHighAccuracy: true, timeout: 8000 }
-  );
+  locationResolved = false;
+  
+  // 并行策略：IP定位立即启动 + 浏览器精确定位 + 8秒兜底
+  setTimeout(() => {
+    if (!locationResolved) {
+      console.warn('刷新定位超时，强制降级');
+      ipFallback();
+    }
+  }, 8000);
+
+  // IP定位立即启动
+  ipFallback();
+
+  // 浏览器精确定位作为增强
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        userLocation.lat = pos.coords.latitude;
+        userLocation.lng = pos.coords.longitude;
+        fetchNearby(pos.coords.latitude, pos.coords.longitude);
+      },
+      () => {},
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  }
 }
 
 function ipFallback() {
@@ -1378,7 +1393,7 @@ function fallbackToPublicAPI() {
 }
 
 function fetchNearby(lat, lng) {
-  const url = `https://restapi.amap.com/v3/place/around?key=${AMAP_KEY}&location=${lng},${lat}&radius=3000&types=050000&offset=6&extensions=all`;
+  const url = `https://restapi.amap.com/v3/place/around?key=${AMAP_KEY}&location=${lng},${lat}&radius=3000&types=050000&offset=12&extensions=all`;
   fetch(url).then(r=>r.json()).then(data => {
     if (data.status==='1' && data.pois && data.pois.length) {
       userLocation.city = data.pois[0]?.cityname || '';
@@ -1391,7 +1406,7 @@ function fetchNearby(lat, lng) {
 }
 
 function fetchNearbyByCity(city) {
-  fetch(`https://restapi.amap.com/v3/place/text?key=${AMAP_KEY}&keywords=餐饮&city=${encodeURIComponent(city)}&offset=6&extensions=all`)
+  fetch(`https://restapi.amap.com/v3/place/text?key=${AMAP_KEY}&keywords=餐饮&city=${encodeURIComponent(city)}&offset=12&extensions=all`)
     .then(r=>r.json()).then(data => {
       if (data.status==='1' && data.pois && data.pois.length) renderNearby(data.pois);
     }).catch(()=>{});
@@ -1405,25 +1420,55 @@ function renderNearby(pois) {
   if (!pois || !pois.length) { section.classList.add('hidden'); return; }
   section.classList.remove('hidden');
 
-  // 同时更新结果卡片下面也展示附近商家（如果结果区可见）
   list.innerHTML = pois.map(p => {
     const dist = p.distance
       ? (p.distance < 1000 ? `${p.distance}m` : `${(p.distance/1000).toFixed(1)}km`)
       : '';
-    const type = (p.type||'').split(';')[0].replace('餐饮服务;','').replace('餐饮相关;','') || '美食';
+    const cat = (p.type||'').split(';').filter(t => t.indexOf('餐饮')===-1)[0] || '美食';
+    const catClean = cat.replace(/中餐厅|外国餐厅|快餐厅|休闲餐饮|地方风味|冷饮店|咖啡厅|茶艺馆|糕饼店/g, '').replace(/[;：:]/g,'').trim() || '美食';
     const rating = p.biz_ext?.rating || '';
     const cost   = p.biz_ext?.cost || '';
+    const addr   = p.address || '';
+    const photos = (p.photos||[]).slice(0,1);
+    const photoUrl = photos.length ? `https://${photos[0].url.replace('http://','').replace('https://','')}` : '';
+    const tag = p.tag || '';
+
+    // 模拟推荐菜品（基于品类）
+    const cuisineMap = {
+      '火锅': '毛肚·鹅肠·肥牛', '烧烤': '羊肉串·烤生蚝·鸡翅',
+      '川菜': '水煮鱼·回锅肉·宫保鸡丁', '粤菜': '白切鸡·煲仔饭·虾饺',
+      '湘菜': '剁椒鱼头·小炒肉', '日料': '三文鱼·寿司·天妇罗',
+      '韩餐': '烤肉·石锅拌饭·炸鸡', '西餐': '牛排·意面·披萨',
+      '小吃': '臭豆腐·煎饼·烤冷面', '面馆': '牛肉面·炸酱面·刀削面',
+      '快餐': '汉堡·薯条·炸鸡', '甜品': '蛋糕·冰淇淋·双皮奶',
+      '饮品': '珍珠奶茶·水果茶·咖啡', '海鲜': '大闸蟹·小龙虾·扇贝',
+      '东北菜': '锅包肉·地三鲜·猪肉炖粉条',
+      '西北菜': '羊肉泡馍·大盘鸡·烤羊腿',
+    };
+    let recommend = tag || '';
+    for (const [k,v] of Object.entries(cuisineMap)) {
+      if (catClean.includes(k) || (p.name||'').includes(k)) { recommend = v; break; }
+    }
+    if (!recommend) recommend = '招牌菜·人气单品';
+
     return `
-      <div class="flex items-center justify-between py-2.5 border-b border-gray-50 last:border-0">
+      <div class="flex items-start gap-3 py-3 border-b border-gray-50 last:border-0">
+        ${photoUrl ? `<img src="${photoUrl}" class="w-16 h-16 rounded-lg object-cover flex-shrink-0" onerror="this.style.display='none'">` : ''}
         <div class="flex-1 min-w-0">
-          <div class="font-semibold text-sm text-gray-700 truncate">${p.name}</div>
-          <div class="flex items-center gap-2 mt-0.5 text-xs text-gray-400">
-            <span>${type}</span>
-            ${dist ? `<span>·</span><span>${dist}</span>` : ''}
-            ${cost ? `<span>·</span><span>${cost}</span>` : ''}
+          <div class="flex items-center gap-2">
+            <span class="font-semibold text-sm text-gray-800 truncate">${p.name}</span>
+            ${rating ? `<span class="text-xs font-bold text-warm-500 bg-warm-50 px-1.5 py-0.5 rounded">${rating}</span>` : ''}
           </div>
+          <div class="flex items-center gap-1.5 mt-1 text-xs text-gray-400">
+            <span class="bg-gray-100 px-1.5 py-0.5 rounded">${catClean}</span>
+            ${dist ? `<span>${dist}</span>` : ''}
+            ${cost ? `<span>·</span><span>人均${cost}</span>` : ''}
+          </div>
+          <div class="text-xs text-gray-500 mt-1 truncate">
+            <span class="text-orange-400">推荐：</span>${recommend}
+          </div>
+          ${addr ? `<div class="text-[11px] text-gray-300 mt-0.5 truncate">${addr}</div>` : ''}
         </div>
-        ${rating ? `<span class="text-xs font-semibold text-warm-500 bg-warm-50 px-2 py-0.5 rounded-full ml-2">${rating}分</span>` : ''}
       </div>
     `;
   }).join('');
